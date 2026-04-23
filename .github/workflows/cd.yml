@@ -1,0 +1,68 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install build dependencies
+        run: |
+          composer install --no-interaction --prefer-dist
+          npm ci
+          npm run build
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.LDA_AI_SSH_KEY }}" > ~/.ssh/lda_ai
+          chmod 600 ~/.ssh/lda_ai
+          ssh-keyscan -H 172.16.70.20 >> ~/.ssh/known_hosts
+
+      - name: Sync release to server
+        run: |
+          rsync -az --delete \
+            --exclude ".git" \
+            --exclude "node_modules" \
+            --exclude "vendor" \
+            --exclude ".env" \
+            --exclude "storage/app" \
+            --exclude "storage/logs" \
+            -e "ssh -i ~/.ssh/lda_ai" \
+            ./ "${{ secrets.LDA_AI_USER }}@172.16.70.20:${{ secrets.LDA_AI_PATH }}/"
+
+      - name: Run remote deploy steps
+        run: |
+          ssh -i ~/.ssh/lda_ai "${{ secrets.LDA_AI_USER }}@172.16.70.20" <<'EOF'
+          set -e
+          cd "${{ secrets.LDA_AI_PATH }}"
+          composer install --no-dev --optimize-autoloader --no-interaction
+          php artisan migrate --force
+          php artisan storage:link || true
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
+          php artisan queue:restart || true
+          EOF
