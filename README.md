@@ -1,59 +1,163 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Map AI Verification
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Map AI Verification is a Laravel-based application for validating CAD plan submissions against defined planning rules. It supports DWG/DXF conversion, CAD footprint extraction, multi-storey building detection, setback checks, ground coverage/FAR estimation, and overlay report generation.
 
-## About Laravel
+## Project overview
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- Backend: Laravel 12, PHP 8.2
+- Frontend: Vite + React + Tailwind CSS
+- CAD processing: Python script at `scripts/process_cad_rules.py`
+- Rules engine: JSON rules file at `rules/5MRulesJSON.json`
+- Data models: CAD submissions, expert labels, training labels, rule results
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Key capabilities
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- Convert CAD drawings (DWG) to DXF for analysis
+- Extract closed building footprints and plot boundary shapes
+- Detect multiple floors via layer tags, handles, or Z-level grouping
+- Compute setbacks, ground coverage, FAR, and storey count
+- Generate overlay PDFs for manual review
+- Store results with submission records and report views
 
-## Learning Laravel
+## Architecture
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+### Primary services
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- `app/Services/CadComplianceService.php`
+  - orchestrates DWG→DXF conversion, Python analysis, and PDF publishing
+  - accepts expert labels and layer maps for more accurate floor selection
+  - writes analysis results back to `CadSubmission`
 
-## Laravel Sponsors
+- `scripts/process_cad_rules.py`
+  - reads DXF files with `ezdxf`
+  - extracts closed polylines and evaluates compliance rules
+  - outputs structured JSON and creates PDF overlays
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+### Routes
 
-### Premium Partners
+Key frontend/admin routes:
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+- `GET /admin/plan/cad-compliance` — CAD submission form
+- `POST /admin/plan/cad-compliance` — submit CAD for compliance analysis
+- `GET /admin/plan/cad-submissions/{id}/compliance` — view results
+- `GET /admin/plan/cad-submissions/{id}/overlay` — overlay PDF access
+- `POST /admin/plan/cad-submissions/{id}/rerun` — rerun analysis with labels
 
-## Contributing
+API route:
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+- `POST /api/plan/check-setback` — rule evaluation endpoint
 
-## Code of Conduct
+## Installation
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+1. Clone the repository.
+2. Copy environment configuration:
 
-## Security Vulnerabilities
+```bash
+cp .env.example .env
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+3. Install PHP dependencies:
+
+```bash
+composer install
+```
+
+4. Install JavaScript dependencies:
+
+```bash
+npm install
+```
+
+5. Create database and run migrations:
+
+```bash
+php artisan migrate
+```
+
+6. Generate application key:
+
+```bash
+php artisan key:generate
+```
+
+7. Build frontend assets:
+
+```bash
+npm run build
+```
+
+8. Install Python dependencies:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+## Running locally
+
+- Start Laravel server:
+
+```bash
+php artisan serve
+```
+
+- Start Vite development server:
+
+```bash
+npm run dev
+```
+
+## CAD analysis workflow
+
+The CAD compliance workflow is driven by `app/Services/CadComplianceService.php`.
+
+1. DWG is converted to DXF using one of the configured converters.
+2. `scripts/process_cad_rules.py` reads the DXF and extracts closed polylines.
+3. The script selects the plot boundary and building footprints.
+4. It computes setbacks, coverage, FAR, and storey counts.
+5. Results are returned as JSON and stored with the submission.
+6. Overlay and drawing PDFs are generated and published to public storage.
+
+## Script usage
+
+See `docs/usage.md` for full CLI options and examples.
+
+## Expert labeling and layer maps
+
+The system improves CAD detection when expert labels are available.
+
+- `--plot-handle` identifies the plot boundary by polyline handle
+- `--building-layer` narrows building footprint candidates by layer
+- `--floor-handles` supplies floor-specific footprint handles
+- `--layer-map-json` provides layer tags such as `plot_boundary` and `ground_floor`
+
+These values are passed by Laravel from `CadExpertLabel` and `CadTrainingLabel` records.
+
+## Layer resolver and training
+
+The DXF pipeline now supports a layer-aware resolver using `rules/layers.json`.
+It can map raw CAD layers to semantic tags and avoid false-positive plot/floor selection from non-plot elements.
+
+- `--resolver-mode` controls lookup mode: `strict`, `alias`, `trained`, or `hybrid`
+- `--resolver-model` loads an optional trained model for ambiguous layer names
+- `--min-confidence` requires a minimum semantic mapping confidence
+- `--allow-heuristic-fallback` enables fallback selection only when explicitly requested
+- `--training-out` writes training events to a JSONL file for later model training
+
+This preserves the existing Laravel JSON output format while adding layer-aware candidate filtering and trainable semantics.
+
+## Important files
+
+- `app/Services/CadComplianceService.php` — CAD processing orchestration
+- `app/Http/Controllers` — web and API controllers
+- `scripts/process_cad_rules.py` — DXF analysis and PDF generation
+- `rules/5MRulesJSON.json` — planning rule definitions
+- `tests/` — PHPUnit tests
+- `docs/deployment.md` — deployment and CI notes
+
+## Deployment
+
+Read `docs/deployment.md` for CI/CD and server requirements.
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+This project is released under the MIT license.

@@ -1,0 +1,2124 @@
+{
+  "schema_name": "lda_residential_cad_rule_to_layer_schema",
+  "version": "1.0.0",
+  "purpose": "Map CAD/DXF layers to semantic building approval entities, geometric measurements, and rule validation inputs.",
+  "unit_system": {
+    "length": "ft",
+    "area": "sqft",
+    "angle": "degree"
+  },
+
+  "layer_groups": {
+    "site": [
+      "A-WALL",
+      "boundary wall",
+      "SITE-FBL",
+      "SITE-PL",
+      "SITE-SB",
+      "SITE-RMP",
+      "SITE-LS"
+    ],
+    "reference": [
+      "REF-DP",
+      "REF-DIM",
+      "REF-DIMS",
+      "REF-SEC",
+      "REF-TXT"
+    ],
+    "basement": [
+      "BSM-WE",
+      "BSM-WI",
+      "BSM-DR",
+      "BSM-WN",
+      "BSM-ST",
+      "BSM-TXT",
+      "BSM-SRV"
+    ],
+    "ground_floor": [
+      "GF-WE",
+      "GF-WI",
+      "GF-DR",
+      "GF-WN",
+      "GF-ST",
+      "GF-PR",
+      "GF-TR",
+      "GF-TXT",
+      "GF-SRV"
+    ],
+    "first_floor": [
+      "FF-WE",
+      "FF-WI",
+      "FF-DR",
+      "FF-WN",
+      "FF-ST",
+      "FF-TR",
+      "FF-BL",
+      "FF-TXT",
+      "FF-SRV"
+    ],
+    "second_floor": [
+      "SF-WE",
+      "SF-WI",
+      "SF-DR",
+      "SF-WN",
+      "SF-ST",
+      "SF-TR",
+      "SF-BL",
+      "SF-TXT",
+      "SF-SRV"
+    ],
+    "roof": [
+      "RF-MUM",
+      "RF-WT",
+      "RF-SLR",
+      "RF-PW",
+      "RF-TXT"
+    ],
+    "components": [
+      "CMP-WIN",
+      "CMP-WND",
+      "CMP-VNT",
+      "CMP-W1"
+    ],
+    "structure": [
+      "STR-COL",
+      "STR-BM",
+      "STR-SLB"
+    ],
+    "materials": [
+      "MAT-H1",
+      "MAT-H2",
+      "MAT-PAV",
+      "MAT-TL",
+      "MAT-GR"
+    ],
+    "utilities": [
+      "UTIL-SWR",
+      "UTIL-WTR",
+      "UTIL-ELC"
+    ]
+  },
+
+  "layer_definitions": {
+    "A-WALL": {
+      "description": "Plot boundary wall / outer site boundary line",
+      "category": "site",
+      "tag": "plot_boundary",
+      "processing_role": "candidate_geometry"
+    },
+    "boundary wall": {
+      "description": "Plot boundary wall / outer site boundary line",
+      "category": "site",
+      "tag": "plot_boundary",
+      "processing_role": "candidate_geometry"
+    },
+    "SITE-FBL": {
+      "description": "Front setback / front building control line",
+      "category": "site",
+      "tag": "front_setback",
+      "processing_role": "measurement_reference"
+    },
+    "SITE-PL": {
+      "description": "Plot dimensions / legal plot line",
+      "category": "site",
+      "tag": "plot_boundary",
+      "processing_role": "primary_geometry"
+    },
+    "SITE-SB": {
+      "description": "Mandatory setback lines",
+      "category": "site",
+      "tag": "setback",
+      "processing_role": "measurement_reference"
+    },
+    "SITE-RMP": {
+      "description": "Vehicle ramp porch",
+      "category": "site",
+      "tag": "ramp",
+      "processing_role": "candidate_geometry"
+    },
+    "SITE-LS": {
+      "description": "Lawn / green area / open space",
+      "category": "site",
+      "tag": "landscape",
+      "processing_role": "open_space_geometry"
+    },
+
+    "REF-DP": {
+      "description": "AutoCAD default definition/reference points / inbuilt",
+      "category": "reference",
+      "tag": "defpoints",
+      "processing_role": "ignore"
+    },
+    "REF-DIM": {
+      "description": "Main dimension line layer",
+      "category": "reference",
+      "tag": "dimension",
+      "processing_role": "annotation_reference"
+    },
+    "REF-DIMS": {
+      "description": "Dimension text / secondary dimensions",
+      "category": "reference",
+      "tag": "dimensions",
+      "processing_role": "annotation_reference"
+    },
+    "REF-SEC": {
+      "description": "Section indicators",
+      "category": "reference",
+      "tag": "section",
+      "processing_role": "annotation_reference"
+    },
+    "REF-TXT": {
+      "description": "General notes / annotations",
+      "category": "reference",
+      "tag": "text",
+      "processing_role": "annotation_reference"
+    },
+
+    "BSM-WE": {
+      "description": "External walls on basement floor",
+      "category": "basement",
+      "tag": "basement_external_walls",
+      "processing_role": "primary_floor_geometry"
+    },
+    "BSM-WI": {
+      "description": "Internal walls on basement floor",
+      "category": "basement",
+      "tag": "basement_internal_walls",
+      "processing_role": "layout_geometry"
+    },
+    "BSM-DR": {
+      "description": "Doors on basement floor",
+      "category": "basement",
+      "tag": "basement_doors",
+      "processing_role": "component_geometry"
+    },
+    "BSM-WN": {
+      "description": "Windows / roshandan / ventilators on basement",
+      "category": "basement",
+      "tag": "basement_windows",
+      "processing_role": "component_geometry"
+    },
+    "BSM-ST": {
+      "description": "Staircase from basement to ground floor",
+      "category": "basement",
+      "tag": "basement_stairs",
+      "processing_role": "vertical_circulation_geometry"
+    },
+    "BSM-TXT": {
+      "description": "Labels/text for basement floor",
+      "category": "basement",
+      "tag": "basement_text",
+      "processing_role": "annotation_reference"
+    },
+    "BSM-SRV": {
+      "description": "Water tank / utilities",
+      "category": "basement",
+      "tag": "basement_services",
+      "processing_role": "service_geometry"
+    },
+
+    "GF-WE": {
+      "description": "External walls on ground floor",
+      "category": "ground_floor",
+      "tag": "ground_external_walls",
+      "processing_role": "primary_floor_geometry"
+    },
+    "GF-WI": {
+      "description": "Internal walls on ground floor",
+      "category": "ground_floor",
+      "tag": "ground_internal_walls",
+      "processing_role": "layout_geometry"
+    },
+    "GF-DR": {
+      "description": "Doors on ground floor",
+      "category": "ground_floor",
+      "tag": "ground_doors",
+      "processing_role": "component_geometry"
+    },
+    "GF-WN": {
+      "description": "Windows on ground floor",
+      "category": "ground_floor",
+      "tag": "ground_windows",
+      "processing_role": "component_geometry"
+    },
+    "GF-ST": {
+      "description": "Staircase from ground to first floor",
+      "category": "ground_floor",
+      "tag": "ground_stairs",
+      "processing_role": "vertical_circulation_geometry"
+    },
+    "GF-PR": {
+      "description": "Porch / car porch",
+      "category": "ground_floor",
+      "tag": "ground_porch",
+      "processing_role": "ancillary_geometry"
+    },
+    "GF-TR": {
+      "description": "Open terrace / shaft / courtyard",
+      "category": "ground_floor",
+      "tag": "ground_terrace",
+      "processing_role": "open_space_geometry"
+    },
+    "GF-TXT": {
+      "description": "Labels/text for ground floor",
+      "category": "ground_floor",
+      "tag": "ground_text",
+      "processing_role": "annotation_reference"
+    },
+    "GF-SRV": {
+      "description": "Kitchen/toilet shafts/services",
+      "category": "ground_floor",
+      "tag": "ground_services",
+      "processing_role": "service_geometry"
+    },
+
+    "FF-WE": {
+      "description": "External walls on first floor",
+      "category": "first_floor",
+      "tag": "first_external_walls",
+      "processing_role": "primary_floor_geometry"
+    },
+    "FF-WI": {
+      "description": "Internal walls on first floor",
+      "category": "first_floor",
+      "tag": "first_internal_walls",
+      "processing_role": "layout_geometry"
+    },
+    "FF-DR": {
+      "description": "Doors on first floor",
+      "category": "first_floor",
+      "tag": "first_doors",
+      "processing_role": "component_geometry"
+    },
+    "FF-WN": {
+      "description": "Windows on first floor",
+      "category": "first_floor",
+      "tag": "first_windows",
+      "processing_role": "component_geometry"
+    },
+    "FF-ST": {
+      "description": "Staircase from first to second floor",
+      "category": "first_floor",
+      "tag": "first_stairs",
+      "processing_role": "vertical_circulation_geometry"
+    },
+    "FF-TR": {
+      "description": "Terrace/open roof on first floor",
+      "category": "first_floor",
+      "tag": "first_terrace",
+      "processing_role": "open_space_geometry"
+    },
+    "FF-BL": {
+      "description": "Balcony on first floor",
+      "category": "first_floor",
+      "tag": "first_balcony",
+      "processing_role": "ancillary_geometry"
+    },
+    "FF-TXT": {
+      "description": "Labels/text for first floor",
+      "category": "first_floor",
+      "tag": "first_text",
+      "processing_role": "annotation_reference"
+    },
+    "FF-SRV": {
+      "description": "Toilets/shafts/services",
+      "category": "first_floor",
+      "tag": "first_services",
+      "processing_role": "service_geometry"
+    },
+
+    "SF-WE": {
+      "description": "External walls on second floor",
+      "category": "second_floor",
+      "tag": "second_external_walls",
+      "processing_role": "primary_floor_geometry"
+    },
+    "SF-WI": {
+      "description": "Internal walls on second floor",
+      "category": "second_floor",
+      "tag": "second_internal_walls",
+      "processing_role": "layout_geometry"
+    },
+    "SF-DR": {
+      "description": "Doors on second floor",
+      "category": "second_floor",
+      "tag": "second_doors",
+      "processing_role": "component_geometry"
+    },
+    "SF-WN": {
+      "description": "Windows on second floor",
+      "category": "second_floor",
+      "tag": "second_windows",
+      "processing_role": "component_geometry"
+    },
+    "SF-ST": {
+      "description": "Staircase on second floor",
+      "category": "second_floor",
+      "tag": "second_stairs",
+      "processing_role": "vertical_circulation_geometry"
+    },
+    "SF-TR": {
+      "description": "Terrace/open roof on second floor",
+      "category": "second_floor",
+      "tag": "second_terrace",
+      "processing_role": "open_space_geometry"
+    },
+    "SF-BL": {
+      "description": "Balcony on second floor",
+      "category": "second_floor",
+      "tag": "second_balcony",
+      "processing_role": "ancillary_geometry"
+    },
+    "SF-TXT": {
+      "description": "Labels/text for second floor",
+      "category": "second_floor",
+      "tag": "second_text",
+      "processing_role": "annotation_reference"
+    },
+    "SF-SRV": {
+      "description": "Toilets/shafts/services",
+      "category": "second_floor",
+      "tag": "second_services",
+      "processing_role": "service_geometry"
+    },
+
+    "RF-MUM": {
+      "description": "Stair cover / mumty structure",
+      "category": "roof",
+      "tag": "mumty",
+      "processing_role": "roof_structure_geometry"
+    },
+    "RF-WT": {
+      "description": "Overhead water tank",
+      "category": "roof",
+      "tag": "water_tank",
+      "processing_role": "roof_service_geometry"
+    },
+    "RF-SLR": {
+      "description": "Solar panel layout",
+      "category": "roof",
+      "tag": "solar",
+      "processing_role": "roof_utility_geometry"
+    },
+    "RF-PW": {
+      "description": "Roof parapet wall",
+      "category": "roof",
+      "tag": "parapet_wall",
+      "processing_role": "height_related_geometry"
+    },
+    "RF-TXT": {
+      "description": "Roof annotations",
+      "category": "roof",
+      "tag": "roof_text",
+      "processing_role": "annotation_reference"
+    },
+
+    "CMP-WIN": {
+      "description": "Standard window elements",
+      "category": "components",
+      "tag": "window",
+      "processing_role": "component_geometry"
+    },
+    "CMP-WND": {
+      "description": "Detailed window annotations",
+      "category": "components",
+      "tag": "window_detailed",
+      "processing_role": "component_geometry"
+    },
+    "CMP-VNT": {
+      "description": "Ventilator / roshandan",
+      "category": "components",
+      "tag": "ventilator",
+      "processing_role": "component_geometry"
+    },
+    "CMP-W1": {
+      "description": "Special wall type / wall marking",
+      "category": "components",
+      "tag": "wall_special",
+      "processing_role": "component_geometry"
+    },
+
+    "STR-COL": {
+      "description": "Structural columns",
+      "category": "structure",
+      "tag": "columns",
+      "processing_role": "structural_geometry"
+    },
+    "STR-BM": {
+      "description": "Structural beams",
+      "category": "structure",
+      "tag": "beams",
+      "processing_role": "structural_geometry"
+    },
+    "STR-SLB": {
+      "description": "Slab edges / slab references",
+      "category": "structure",
+      "tag": "slab",
+      "processing_role": "structural_geometry"
+    },
+
+    "MAT-H1": {
+      "description": "Primary hatch / material fill",
+      "category": "materials",
+      "tag": "hatch_primary",
+      "processing_role": "visual_only"
+    },
+    "MAT-H2": {
+      "description": "Secondary hatch / alternate fill",
+      "category": "materials",
+      "tag": "hatch_secondary",
+      "processing_role": "visual_only"
+    },
+    "MAT-PAV": {
+      "description": "Pavement / paving / flooring",
+      "category": "materials",
+      "tag": "pavement",
+      "processing_role": "surface_finish_geometry"
+    },
+    "MAT-TL": {
+      "description": "Floor tile finish",
+      "category": "materials",
+      "tag": "tile",
+      "processing_role": "visual_only"
+    },
+    "MAT-GR": {
+      "description": "Landscape hatch",
+      "category": "materials",
+      "tag": "grass",
+      "processing_role": "landscape_visual"
+    },
+
+    "UTIL-SWR": {
+      "description": "Sewerage line",
+      "category": "utilities",
+      "tag": "sewer",
+      "processing_role": "utility_geometry"
+    },
+    "UTIL-WTR": {
+      "description": "Water supply line",
+      "category": "utilities",
+      "tag": "water_supply",
+      "processing_role": "utility_geometry"
+    },
+    "UTIL-ELC": {
+      "description": "Electrical layout",
+      "category": "utilities",
+      "tag": "electric",
+      "processing_role": "utility_geometry"
+    }
+  },
+
+  "semantic_entities": {
+    "plot_boundary": {
+      "label": "Legal Plot Boundary",
+      "required": true,
+      "source_layers": [
+        "SITE-PL",
+        "A-WALL",
+        "boundary wall"
+      ],
+      "preferred_layers": [
+        "SITE-PL"
+      ],
+      "fallback_layers": [
+        "A-WALL",
+        "boundary wall"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "largest_closed_polygon_on_plot_boundary_layers",
+      "used_for": [
+        "plot_area_sqft",
+        "plot_width",
+        "plot_depth",
+        "front_setback_ft",
+        "rear_setback_ft",
+        "left_setback_ft",
+        "right_setback_ft",
+        "ground_coverage_percent",
+        "far"
+      ]
+    },
+
+    "front_building_line": {
+      "label": "Front Building Line / Front Control Line",
+      "required": false,
+      "source_layers": [
+        "SITE-FBL",
+        "SITE-SB"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "line_nearest_front_road_or_marked_front",
+      "used_for": [
+        "front_setback_ft",
+        "front_side_detection"
+      ]
+    },
+
+    "setback_lines": {
+      "label": "Mandatory Setback Lines",
+      "required": false,
+      "source_layers": [
+        "SITE-SB",
+        "SITE-FBL"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_setback_reference_lines",
+      "used_for": [
+        "front_setback_ft",
+        "rear_setback_ft",
+        "left_setback_ft",
+        "right_setback_ft"
+      ]
+    },
+
+    "ramp_polygon": {
+      "label": "Ramp / Vehicle Access",
+      "required": false,
+      "source_layers": [
+        "SITE-RMP"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE",
+        "LINE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "entities_on_ramp_layer",
+      "used_for": [
+        "ramp_check",
+        "porch_access_check"
+      ]
+    },
+
+    "landscape_open_space": {
+      "label": "Lawn / Landscape / Open Space",
+      "required": false,
+      "source_layers": [
+        "SITE-LS",
+        "MAT-GR"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE",
+        "HATCH"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "open_space_or_landscape_entities",
+      "used_for": [
+        "open_space_check",
+        "landscape_check"
+      ]
+    },
+
+    "basement_covered_polygon": {
+      "label": "Basement Covered Area",
+      "required": false,
+      "source_layers": [
+        "BSM-WE"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "outermost_closed_polygon_inside_plot_from_basement_external_walls",
+      "used_for": [
+        "basement_area_sqft",
+        "basement_validation",
+        "total_constructed_area_sqft"
+      ]
+    },
+
+    "basement_internal_layout": {
+      "label": "Basement Internal Layout",
+      "required": false,
+      "source_layers": [
+        "BSM-WI",
+        "BSM-DR",
+        "BSM-WN",
+        "BSM-ST",
+        "BSM-SRV"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "CIRCLE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_layout_entities_on_basement_layers",
+      "used_for": [
+        "layout_review",
+        "ventilation_review",
+        "services_review",
+        "stairs_review"
+      ]
+    },
+
+    "ground_floor_covered_polygon": {
+      "label": "Ground Floor Covered Area",
+      "required": true,
+      "source_layers": [
+        "GF-WE"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "outermost_closed_polygon_inside_plot_from_ground_external_walls",
+      "used_for": [
+        "ground_floor_area_sqft",
+        "ground_coverage_percent",
+        "front_setback_ft",
+        "rear_setback_ft",
+        "left_setback_ft",
+        "right_setback_ft",
+        "far",
+        "total_covered_area_sqft"
+      ]
+    },
+
+    "ground_floor_internal_layout": {
+      "label": "Ground Floor Internal Layout",
+      "required": false,
+      "source_layers": [
+        "GF-WI",
+        "GF-DR",
+        "GF-WN",
+        "GF-ST",
+        "GF-TXT",
+        "GF-SRV"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "CIRCLE",
+        "TEXT",
+        "MTEXT"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_layout_entities_on_ground_floor_layers",
+      "used_for": [
+        "layout_review",
+        "ventilation_review",
+        "stair_review",
+        "service_area_review"
+      ]
+    },
+
+    "ground_porch_polygon": {
+      "label": "Ground Floor Porch",
+      "required": false,
+      "source_layers": [
+        "GF-PR",
+        "SITE-RMP"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "closed_polygon_on_porch_or_ramp_layer",
+      "used_for": [
+        "porch_length_ft",
+        "porch_area_sqft",
+        "porch_room_not_allowed_check"
+      ]
+    },
+
+    "ground_terrace_or_courtyard": {
+      "label": "Ground Terrace / Shaft / Courtyard",
+      "required": false,
+      "source_layers": [
+        "GF-TR"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE",
+        "HATCH"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "entities_on_ground_terrace_layer",
+      "used_for": [
+        "open_space_check",
+        "shaft_review",
+        "courtyard_review"
+      ]
+    },
+
+    "ground_services_polygon": {
+      "label": "Ground Floor Services / Toilet / Shaft",
+      "required": false,
+      "source_layers": [
+        "GF-SRV"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "closed_service_polygons_on_ground_floor",
+      "used_for": [
+        "rear_toilet_area_sqft",
+        "service_area_review"
+      ]
+    },
+
+    "first_floor_covered_polygon": {
+      "label": "First Floor Covered Area",
+      "required": false,
+      "source_layers": [
+        "FF-WE"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "outermost_closed_polygon_inside_plot_from_first_floor_external_walls",
+      "used_for": [
+        "first_floor_area_sqft",
+        "far",
+        "total_covered_area_sqft",
+        "storey_count"
+      ]
+    },
+
+    "first_floor_internal_layout": {
+      "label": "First Floor Internal Layout",
+      "required": false,
+      "source_layers": [
+        "FF-WI",
+        "FF-DR",
+        "FF-WN",
+        "FF-ST",
+        "FF-TXT",
+        "FF-SRV"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "CIRCLE",
+        "TEXT",
+        "MTEXT"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_layout_entities_on_first_floor_layers",
+      "used_for": [
+        "layout_review",
+        "ventilation_review",
+        "stair_review",
+        "service_area_review"
+      ]
+    },
+
+    "first_floor_balcony": {
+      "label": "First Floor Balcony",
+      "required": false,
+      "source_layers": [
+        "FF-BL"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "closed_polygon_on_first_floor_balcony_layer",
+      "used_for": [
+        "balcony_projection_check",
+        "balcony_area_check"
+      ]
+    },
+
+    "first_floor_terrace": {
+      "label": "First Floor Terrace / Open Roof",
+      "required": false,
+      "source_layers": [
+        "FF-TR"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE",
+        "HATCH"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "entities_on_first_floor_terrace_layer",
+      "used_for": [
+        "terrace_review",
+        "open_space_review"
+      ]
+    },
+
+    "first_floor_services_polygon": {
+      "label": "First Floor Services / Toilet / Shaft",
+      "required": false,
+      "source_layers": [
+        "FF-SRV"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "closed_service_polygons_on_first_floor",
+      "used_for": [
+        "rear_toilet_area_sqft",
+        "service_area_review"
+      ]
+    },
+
+    "second_floor_covered_polygon": {
+      "label": "Second Floor Covered Area",
+      "required": false,
+      "source_layers": [
+        "SF-WE"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "outermost_closed_polygon_inside_plot_from_second_floor_external_walls",
+      "used_for": [
+        "second_floor_area_sqft",
+        "far",
+        "total_covered_area_sqft",
+        "storey_count"
+      ]
+    },
+
+    "second_floor_internal_layout": {
+      "label": "Second Floor Internal Layout",
+      "required": false,
+      "source_layers": [
+        "SF-WI",
+        "SF-DR",
+        "SF-WN",
+        "SF-ST",
+        "SF-TXT",
+        "SF-SRV"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "CIRCLE",
+        "TEXT",
+        "MTEXT"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_layout_entities_on_second_floor_layers",
+      "used_for": [
+        "layout_review",
+        "ventilation_review",
+        "stair_review",
+        "service_area_review"
+      ]
+    },
+
+    "second_floor_balcony": {
+      "label": "Second Floor Balcony",
+      "required": false,
+      "source_layers": [
+        "SF-BL"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "closed_polygon_on_second_floor_balcony_layer",
+      "used_for": [
+        "balcony_projection_check",
+        "balcony_area_check"
+      ]
+    },
+
+    "second_floor_terrace": {
+      "label": "Second Floor Terrace / Open Roof",
+      "required": false,
+      "source_layers": [
+        "SF-TR"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE",
+        "HATCH"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "entities_on_second_floor_terrace_layer",
+      "used_for": [
+        "terrace_review",
+        "open_space_review"
+      ]
+    },
+
+    "second_floor_services_polygon": {
+      "label": "Second Floor Services / Toilet / Shaft",
+      "required": false,
+      "source_layers": [
+        "SF-SRV"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "closed_service_polygons_on_second_floor",
+      "used_for": [
+        "rear_toilet_area_sqft",
+        "service_area_review"
+      ]
+    },
+
+    "roof_mumty": {
+      "label": "Mumty / Stair Cover",
+      "required": false,
+      "source_layers": [
+        "RF-MUM"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": true,
+      "selection_rule": "closed_polygon_on_mumty_layer",
+      "used_for": [
+        "mumty_area_check",
+        "height_check",
+        "roof_structure_review"
+      ]
+    },
+
+    "roof_water_tank": {
+      "label": "Overhead Water Tank",
+      "required": false,
+      "source_layers": [
+        "RF-WT"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE",
+        "CIRCLE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "entities_on_roof_water_tank_layer",
+      "used_for": [
+        "water_tank_check",
+        "roof_service_review"
+      ]
+    },
+
+    "roof_parapet_wall": {
+      "label": "Roof Parapet Wall",
+      "required": false,
+      "source_layers": [
+        "RF-PW"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "entities_on_roof_parapet_layer",
+      "used_for": [
+        "height_check",
+        "parapet_review"
+      ]
+    },
+
+    "roof_solar_layout": {
+      "label": "Solar Panel Layout",
+      "required": false,
+      "source_layers": [
+        "RF-SLR"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE",
+        "LINE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "entities_on_roof_solar_layer",
+      "used_for": [
+        "solar_layout_review"
+      ]
+    },
+
+    "structural_columns": {
+      "label": "Structural Columns",
+      "required": false,
+      "source_layers": [
+        "STR-COL"
+      ],
+      "allowed_entity_types": [
+        "LWPOLYLINE",
+        "POLYLINE",
+        "CIRCLE",
+        "INSERT"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_column_entities",
+      "used_for": [
+        "structural_review"
+      ]
+    },
+
+    "structural_beams": {
+      "label": "Structural Beams",
+      "required": false,
+      "source_layers": [
+        "STR-BM"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_beam_entities",
+      "used_for": [
+        "structural_review"
+      ]
+    },
+
+    "structural_slab": {
+      "label": "Slab Edges / Slab Reference",
+      "required": false,
+      "source_layers": [
+        "STR-SLB"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_slab_entities",
+      "used_for": [
+        "structural_review"
+      ]
+    },
+
+    "utility_sewerage": {
+      "label": "Sewerage Line",
+      "required": false,
+      "source_layers": [
+        "UTIL-SWR"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_sewerage_entities",
+      "used_for": [
+        "sewerage_plan_check"
+      ]
+    },
+
+    "utility_water_supply": {
+      "label": "Water Supply Line",
+      "required": false,
+      "source_layers": [
+        "UTIL-WTR"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_water_supply_entities",
+      "used_for": [
+        "water_supply_plan_check"
+      ]
+    },
+
+    "utility_electrical": {
+      "label": "Electrical Layout",
+      "required": false,
+      "source_layers": [
+        "UTIL-ELC"
+      ],
+      "allowed_entity_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "INSERT"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_electrical_entities",
+      "used_for": [
+        "electricity_safety_plan_check"
+      ]
+    },
+
+    "annotations_and_dimensions": {
+      "label": "Annotations, Dimensions and Text",
+      "required": false,
+      "source_layers": [
+        "REF-DIM",
+        "REF-DIMS",
+        "REF-SEC",
+        "REF-TXT",
+        "BSM-TXT",
+        "GF-TXT",
+        "FF-TXT",
+        "SF-TXT",
+        "RF-TXT"
+      ],
+      "allowed_entity_types": [
+        "TEXT",
+        "MTEXT",
+        "DIMENSION",
+        "LEADER",
+        "MLEADER"
+      ],
+      "must_be_closed": false,
+      "selection_rule": "all_annotation_entities",
+      "used_for": [
+        "dimension_cross_check",
+        "label_detection",
+        "expert_review_display"
+      ]
+    }
+  },
+
+  "calculation_inputs": {
+    "plot_area_sqft": {
+      "semantic_entity": "plot_boundary",
+      "calculation": "polygon_area"
+    },
+    "ground_floor_area_sqft": {
+      "semantic_entity": "ground_floor_covered_polygon",
+      "calculation": "polygon_area"
+    },
+    "basement_area_sqft": {
+      "semantic_entity": "basement_covered_polygon",
+      "calculation": "polygon_area",
+      "required": false
+    },
+    "first_floor_area_sqft": {
+      "semantic_entity": "first_floor_covered_polygon",
+      "calculation": "polygon_area",
+      "required": false
+    },
+    "second_floor_area_sqft": {
+      "semantic_entity": "second_floor_covered_polygon",
+      "calculation": "polygon_area",
+      "required": false
+    },
+    "total_covered_area_sqft": {
+      "semantic_entities": [
+        "ground_floor_covered_polygon",
+        "first_floor_covered_polygon",
+        "second_floor_covered_polygon"
+      ],
+      "calculation": "sum_polygon_area"
+    },
+    "ground_coverage_percent": {
+      "formula": "(ground_floor_area_sqft / plot_area_sqft) * 100"
+    },
+    "far": {
+      "formula": "total_covered_area_sqft / plot_area_sqft"
+    },
+    "front_setback_ft": {
+      "semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon",
+        "front_building_line"
+      ],
+      "calculation": "minimum_distance_from_front_plot_edge_to_ground_floor_polygon"
+    },
+    "rear_setback_ft": {
+      "semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon"
+      ],
+      "calculation": "minimum_distance_from_rear_plot_edge_to_ground_floor_polygon"
+    },
+    "left_setback_ft": {
+      "semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon"
+      ],
+      "calculation": "minimum_distance_from_left_plot_edge_to_ground_floor_polygon"
+    },
+    "right_setback_ft": {
+      "semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon"
+      ],
+      "calculation": "minimum_distance_from_right_plot_edge_to_ground_floor_polygon"
+    },
+    "porch_length_ft": {
+      "semantic_entity": "ground_porch_polygon",
+      "calculation": "max_polygon_length"
+    },
+    "porch_area_sqft": {
+      "semantic_entity": "ground_porch_polygon",
+      "calculation": "polygon_area"
+    },
+    "rear_toilet_area_sqft": {
+      "semantic_entities": [
+        "ground_services_polygon",
+        "first_floor_services_polygon",
+        "second_floor_services_polygon"
+      ],
+      "calculation": "detect_rear_corner_service_polygon_area"
+    },
+    "storey_count": {
+      "semantic_entities": [
+        "ground_floor_covered_polygon",
+        "first_floor_covered_polygon",
+        "second_floor_covered_polygon"
+      ],
+      "calculation": "count_existing_floor_footprint_entities"
+    }
+  },
+
+  "rules_to_layers": {
+    "SETBACK_FRONT": {
+      "description": "Validate front setback from plot/front control line to ground floor external building footprint.",
+      "required_semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon"
+      ],
+      "optional_semantic_entities": [
+        "front_building_line",
+        "setback_lines",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "SITE-PL",
+        "GF-WE"
+      ],
+      "supporting_layers": [
+        "SITE-FBL",
+        "SITE-SB",
+        "REF-DIM",
+        "REF-DIMS",
+        "REF-TXT"
+      ],
+      "calculation_inputs": [
+        "front_setback_ft"
+      ],
+      "geometry_method": "distance_between_front_plot_edge_and_ground_floor_polygon",
+      "review_policy": "expert_review_if_front_side_not_detected"
+    },
+
+    "SETBACK_REAR": {
+      "description": "Validate rear setback from rear plot edge to ground floor external building footprint.",
+      "required_semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon"
+      ],
+      "optional_semantic_entities": [
+        "setback_lines",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "SITE-PL",
+        "GF-WE"
+      ],
+      "supporting_layers": [
+        "SITE-SB",
+        "REF-DIM",
+        "REF-DIMS",
+        "REF-TXT"
+      ],
+      "calculation_inputs": [
+        "rear_setback_ft"
+      ],
+      "geometry_method": "distance_between_rear_plot_edge_and_ground_floor_polygon",
+      "review_policy": "expert_review_if_rear_side_not_detected"
+    },
+
+    "SETBACK_SIDE": {
+      "description": "Validate left and right side setbacks from side plot edges to ground floor external building footprint.",
+      "required_semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon"
+      ],
+      "optional_semantic_entities": [
+        "setback_lines",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "SITE-PL",
+        "GF-WE"
+      ],
+      "supporting_layers": [
+        "SITE-SB",
+        "REF-DIM",
+        "REF-DIMS",
+        "REF-TXT"
+      ],
+      "calculation_inputs": [
+        "left_setback_ft",
+        "right_setback_ft"
+      ],
+      "geometry_method": "distance_between_side_plot_edges_and_ground_floor_polygon",
+      "review_policy": "expert_review_if_side_orientation_not_detected"
+    },
+
+    "GROUND_COVERAGE": {
+      "description": "Validate ground floor coverage percentage against allowed limit.",
+      "required_semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon"
+      ],
+      "optional_semantic_entities": [
+        "ground_terrace_or_courtyard",
+        "landscape_open_space"
+      ],
+      "primary_layers": [
+        "SITE-PL",
+        "GF-WE"
+      ],
+      "supporting_layers": [
+        "GF-TR",
+        "SITE-LS",
+        "MAT-GR"
+      ],
+      "excluded_layers": [
+        "GF-WI",
+        "GF-DR",
+        "GF-WN",
+        "GF-TXT",
+        "REF-DIM",
+        "REF-DIMS",
+        "MAT-H1",
+        "MAT-H2"
+      ],
+      "calculation_inputs": [
+        "plot_area_sqft",
+        "ground_floor_area_sqft",
+        "ground_coverage_percent"
+      ],
+      "geometry_method": "ground_floor_polygon_area_divided_by_plot_boundary_area",
+      "review_policy": "expert_review_if_multiple_ground_external_closed_polygons"
+    },
+
+    "FAR_LIMIT": {
+      "description": "Validate floor area ratio based on total covered area of valid floor footprints.",
+      "required_semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon"
+      ],
+      "optional_semantic_entities": [
+        "basement_covered_polygon",
+        "first_floor_covered_polygon",
+        "second_floor_covered_polygon"
+      ],
+      "primary_layers": [
+        "SITE-PL",
+        "GF-WE",
+        "FF-WE",
+        "SF-WE"
+      ],
+      "supporting_layers": [
+        "BSM-WE",
+        "REF-DIM",
+        "REF-DIMS"
+      ],
+      "excluded_layers": [
+        "GF-WI",
+        "FF-WI",
+        "SF-WI",
+        "BSM-WI",
+        "GF-DR",
+        "FF-DR",
+        "SF-DR",
+        "BSM-DR",
+        "GF-WN",
+        "FF-WN",
+        "SF-WN",
+        "BSM-WN",
+        "MAT-H1",
+        "MAT-H2"
+      ],
+      "calculation_inputs": [
+        "plot_area_sqft",
+        "ground_floor_area_sqft",
+        "first_floor_area_sqft",
+        "second_floor_area_sqft",
+        "total_covered_area_sqft",
+        "far"
+      ],
+      "geometry_method": "sum_floor_external_wall_polygon_areas_divided_by_plot_boundary_area",
+      "review_policy": "expert_review_if_floor_polygon_missing_or_duplicate"
+    },
+
+    "MAX_STOREYS": {
+      "description": "Validate maximum number of storeys excluding or including basement as per rule context.",
+      "required_semantic_entities": [
+        "ground_floor_covered_polygon"
+      ],
+      "optional_semantic_entities": [
+        "basement_covered_polygon",
+        "first_floor_covered_polygon",
+        "second_floor_covered_polygon",
+        "roof_mumty"
+      ],
+      "primary_layers": [
+        "GF-WE",
+        "FF-WE",
+        "SF-WE"
+      ],
+      "supporting_layers": [
+        "BSM-WE",
+        "RF-MUM",
+        "RF-PW",
+        "GF-TXT",
+        "FF-TXT",
+        "SF-TXT",
+        "RF-TXT"
+      ],
+      "calculation_inputs": [
+        "storey_count"
+      ],
+      "geometry_method": "count_detected_floor_footprint_layers",
+      "review_policy": "expert_review_if_floor_text_conflicts_with_detected_layers"
+    },
+
+    "MAX_HEIGHT": {
+      "description": "Validate total building height. CAD plan alone may require section/elevation or user-entered height.",
+      "required_semantic_entities": [
+        "ground_floor_covered_polygon"
+      ],
+      "optional_semantic_entities": [
+        "first_floor_covered_polygon",
+        "second_floor_covered_polygon",
+        "roof_parapet_wall",
+        "roof_mumty",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "GF-WE",
+        "FF-WE",
+        "SF-WE",
+        "RF-PW",
+        "RF-MUM"
+      ],
+      "supporting_layers": [
+        "REF-SEC",
+        "REF-DIM",
+        "REF-DIMS",
+        "REF-TXT",
+        "GF-TXT",
+        "FF-TXT",
+        "SF-TXT",
+        "RF-TXT"
+      ],
+      "calculation_inputs": [
+        "storey_count"
+      ],
+      "geometry_method": "height_from_section_or_user_declared_value_cross_checked_with_storey_count",
+      "review_policy": "requires_expert_or_declared_height_if_no_section_height_available"
+    },
+
+    "STOREY_CLEAR_HEIGHT": {
+      "description": "Validate minimum clear height per storey. Usually requires section/elevation or dimension text.",
+      "required_semantic_entities": [
+        "annotations_and_dimensions"
+      ],
+      "optional_semantic_entities": [
+        "ground_floor_covered_polygon",
+        "first_floor_covered_polygon",
+        "second_floor_covered_polygon"
+      ],
+      "primary_layers": [
+        "REF-SEC",
+        "REF-DIM",
+        "REF-DIMS",
+        "REF-TXT"
+      ],
+      "supporting_layers": [
+        "GF-WE",
+        "FF-WE",
+        "SF-WE",
+        "GF-TXT",
+        "FF-TXT",
+        "SF-TXT"
+      ],
+      "calculation_inputs": [],
+      "geometry_method": "read_section_dimensions_or_manual_input",
+      "review_policy": "expert_review_required_if_clear_height_not_machine_readable"
+    },
+
+    "PORCH_LENGTH": {
+      "description": "Validate porch length from porch polygon or ramp/porch geometry.",
+      "required_semantic_entities": [
+        "ground_porch_polygon"
+      ],
+      "optional_semantic_entities": [
+        "ramp_polygon",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "GF-PR"
+      ],
+      "supporting_layers": [
+        "SITE-RMP",
+        "REF-DIM",
+        "REF-DIMS",
+        "GF-TXT"
+      ],
+      "calculation_inputs": [
+        "porch_length_ft",
+        "porch_area_sqft"
+      ],
+      "geometry_method": "maximum_length_of_porch_polygon",
+      "review_policy": "expert_review_if_porch_polygon_not_closed"
+    },
+
+    "PORCH_ROOM_NOT_ALLOWED": {
+      "description": "Check whether any first-floor room/covered area exists above porch where not allowed.",
+      "required_semantic_entities": [
+        "ground_porch_polygon"
+      ],
+      "optional_semantic_entities": [
+        "first_floor_covered_polygon",
+        "first_floor_internal_layout",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "GF-PR",
+        "FF-WE"
+      ],
+      "supporting_layers": [
+        "FF-WI",
+        "FF-TXT",
+        "REF-DIM",
+        "REF-DIMS"
+      ],
+      "calculation_inputs": [
+        "porch_area_sqft",
+        "first_floor_area_sqft"
+      ],
+      "geometry_method": "spatial_overlap_between_ground_porch_polygon_and_first_floor_covered_polygon",
+      "review_policy": "expert_review_if_floor_alignment_transform_unknown"
+    },
+
+    "REAR_TOILET_AREA": {
+      "description": "Validate rear corner toilet/bath/service area maximum area.",
+      "required_semantic_entities": [
+        "plot_boundary",
+        "ground_floor_covered_polygon"
+      ],
+      "optional_semantic_entities": [
+        "ground_services_polygon",
+        "first_floor_services_polygon",
+        "second_floor_services_polygon",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "GF-SRV",
+        "FF-SRV",
+        "SF-SRV"
+      ],
+      "supporting_layers": [
+        "SITE-PL",
+        "GF-WE",
+        "FF-WE",
+        "SF-WE",
+        "GF-TXT",
+        "FF-TXT",
+        "SF-TXT",
+        "REF-DIM",
+        "REF-DIMS"
+      ],
+      "calculation_inputs": [
+        "rear_toilet_area_sqft"
+      ],
+      "geometry_method": "detect_service_polygon_near_rear_corner_and_calculate_area",
+      "review_policy": "expert_review_if_service_polygon_not_labeled_or_not_closed"
+    },
+
+    "BASEMENT_VALIDATION": {
+      "description": "Validate basement plan if submitted. Basement may be optional depending on plot category and policy.",
+      "required_semantic_entities": [
+        "plot_boundary"
+      ],
+      "optional_semantic_entities": [
+        "basement_covered_polygon",
+        "basement_internal_layout",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "BSM-WE"
+      ],
+      "supporting_layers": [
+        "BSM-WI",
+        "BSM-DR",
+        "BSM-WN",
+        "BSM-ST",
+        "BSM-SRV",
+        "BSM-TXT",
+        "SITE-PL",
+        "REF-DIM",
+        "REF-DIMS"
+      ],
+      "calculation_inputs": [
+        "basement_area_sqft"
+      ],
+      "geometry_method": "basement_external_wall_polygon_area_and_layout_review",
+      "review_policy": "expert_review_if_basement_exists_without_required_external_polygon"
+    },
+
+    "BALCONY_PROJECTION": {
+      "description": "Validate balcony projection or balcony area if applicable.",
+      "required_semantic_entities": [],
+      "optional_semantic_entities": [
+        "first_floor_balcony",
+        "second_floor_balcony",
+        "plot_boundary",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "FF-BL",
+        "SF-BL"
+      ],
+      "supporting_layers": [
+        "SITE-PL",
+        "REF-DIM",
+        "REF-DIMS",
+        "FF-TXT",
+        "SF-TXT"
+      ],
+      "calculation_inputs": [],
+      "geometry_method": "balcony_polygon_projection_beyond_floor_or_plot_reference",
+      "review_policy": "expert_review_if_balcony_projection_rule_active"
+    },
+
+    "OPEN_SPACE_LANDSCAPE": {
+      "description": "Validate open space, lawn, terrace, shaft, or courtyard areas if required.",
+      "required_semantic_entities": [],
+      "optional_semantic_entities": [
+        "landscape_open_space",
+        "ground_terrace_or_courtyard",
+        "first_floor_terrace",
+        "second_floor_terrace"
+      ],
+      "primary_layers": [
+        "SITE-LS",
+        "GF-TR",
+        "FF-TR",
+        "SF-TR"
+      ],
+      "supporting_layers": [
+        "MAT-GR",
+        "MAT-PAV",
+        "REF-DIM",
+        "REF-DIMS"
+      ],
+      "calculation_inputs": [],
+      "geometry_method": "open_space_area_or_presence_check",
+      "review_policy": "optional_review_unless_rule_active"
+    },
+
+    "STRUCTURAL_DRAWINGS": {
+      "description": "Check presence of structural layers or structural drawing package.",
+      "required_semantic_entities": [],
+      "optional_semantic_entities": [
+        "structural_columns",
+        "structural_beams",
+        "structural_slab"
+      ],
+      "primary_layers": [
+        "STR-COL",
+        "STR-BM",
+        "STR-SLB"
+      ],
+      "supporting_layers": [
+        "REF-TXT",
+        "REF-DIM",
+        "REF-DIMS"
+      ],
+      "calculation_inputs": [],
+      "geometry_method": "presence_and_basic_consistency_check",
+      "review_policy": "document_required_if_rule_active"
+    },
+
+    "WATER_SUPPLY_SEWERAGE_DRAINAGE_PLAN": {
+      "description": "Check utility plan layers for water supply and sewerage.",
+      "required_semantic_entities": [],
+      "optional_semantic_entities": [
+        "utility_sewerage",
+        "utility_water_supply"
+      ],
+      "primary_layers": [
+        "UTIL-SWR",
+        "UTIL-WTR"
+      ],
+      "supporting_layers": [
+        "BSM-SRV",
+        "GF-SRV",
+        "FF-SRV",
+        "SF-SRV",
+        "REF-TXT"
+      ],
+      "calculation_inputs": [],
+      "geometry_method": "presence_and_routing_review",
+      "review_policy": "document_required_if_rule_active"
+    },
+
+    "ELECTRICITY_SAFETY_PLAN": {
+      "description": "Check electrical layout presence.",
+      "required_semantic_entities": [],
+      "optional_semantic_entities": [
+        "utility_electrical"
+      ],
+      "primary_layers": [
+        "UTIL-ELC"
+      ],
+      "supporting_layers": [
+        "REF-TXT",
+        "REF-DIM",
+        "REF-DIMS"
+      ],
+      "calculation_inputs": [],
+      "geometry_method": "presence_and_basic_layout_review",
+      "review_policy": "document_required_if_rule_active"
+    },
+
+    "FIRE_SAFETY_PLAN": {
+      "description": "Check fire safety relevant circulation, services, stairs, and exits. Numeric fire checks should use external fire code module.",
+      "required_semantic_entities": [],
+      "optional_semantic_entities": [
+        "ground_floor_internal_layout",
+        "first_floor_internal_layout",
+        "second_floor_internal_layout",
+        "basement_internal_layout",
+        "annotations_and_dimensions"
+      ],
+      "primary_layers": [
+        "GF-ST",
+        "FF-ST",
+        "SF-ST",
+        "BSM-ST",
+        "GF-DR",
+        "FF-DR",
+        "SF-DR",
+        "BSM-DR"
+      ],
+      "supporting_layers": [
+        "REF-TXT",
+        "REF-DIM",
+        "REF-DIMS"
+      ],
+      "calculation_inputs": [],
+      "geometry_method": "external_code_hook_and_expert_review",
+      "review_policy": "send_to_external_fire_safety_module_if_applicable"
+    }
+  },
+
+  "layer_processing_policy": {
+    "area_calculation_layers": [
+      "SITE-PL",
+      "A-WALL",
+      "boundary wall",
+      "BSM-WE",
+      "GF-WE",
+      "GF-PR",
+      "GF-SRV",
+      "FF-WE",
+      "FF-BL",
+      "FF-SRV",
+      "SF-WE",
+      "SF-BL",
+      "SF-SRV",
+      "RF-MUM"
+    ],
+    "distance_measurement_layers": [
+      "SITE-PL",
+      "SITE-FBL",
+      "SITE-SB",
+      "GF-WE",
+      "FF-WE",
+      "SF-WE",
+      "REF-DIM",
+      "REF-DIMS"
+    ],
+    "display_only_layers": [
+      "REF-DP",
+      "REF-SEC",
+      "REF-TXT",
+      "BSM-TXT",
+      "GF-TXT",
+      "FF-TXT",
+      "SF-TXT",
+      "RF-TXT",
+      "MAT-H1",
+      "MAT-H2",
+      "MAT-TL",
+      "CMP-WIN",
+      "CMP-WND",
+      "CMP-VNT",
+      "CMP-W1"
+    ],
+    "layout_review_layers": [
+      "BSM-WI",
+      "BSM-DR",
+      "BSM-WN",
+      "BSM-ST",
+      "GF-WI",
+      "GF-DR",
+      "GF-WN",
+      "GF-ST",
+      "FF-WI",
+      "FF-DR",
+      "FF-WN",
+      "FF-ST",
+      "SF-WI",
+      "SF-DR",
+      "SF-WN",
+      "SF-ST"
+    ],
+    "service_review_layers": [
+      "BSM-SRV",
+      "GF-SRV",
+      "FF-SRV",
+      "SF-SRV",
+      "UTIL-SWR",
+      "UTIL-WTR",
+      "UTIL-ELC"
+    ],
+    "structural_review_layers": [
+      "STR-COL",
+      "STR-BM",
+      "STR-SLB"
+    ],
+    "ignore_for_approval_geometry": [
+      "REF-DP",
+      "MAT-H1",
+      "MAT-H2",
+      "MAT-TL"
+    ]
+  },
+
+  "entity_selection_scoring": {
+    "plot_boundary": {
+      "candidate_layers": [
+        "SITE-PL",
+        "A-WALL",
+        "boundary wall"
+      ],
+      "auto_accept_score": 85,
+      "needs_review_score": 60,
+      "scoring": [
+        {
+          "feature": "is_closed",
+          "weight": 30
+        },
+        {
+          "feature": "largest_area_on_site_boundary_layers",
+          "weight": 25
+        },
+        {
+          "feature": "contains_ground_floor_covered_polygon",
+          "weight": 25
+        },
+        {
+          "feature": "matches_declared_plot_area_tolerance",
+          "weight": 20
+        }
+      ]
+    },
+    "ground_floor_covered_polygon": {
+      "candidate_layers": [
+        "GF-WE"
+      ],
+      "auto_accept_score": 85,
+      "needs_review_score": 60,
+      "scoring": [
+        {
+          "feature": "is_closed",
+          "weight": 30
+        },
+        {
+          "feature": "inside_plot_boundary",
+          "weight": 25
+        },
+        {
+          "feature": "largest_area_on_ground_external_wall_layer",
+          "weight": 20
+        },
+        {
+          "feature": "area_less_than_plot_area",
+          "weight": 15
+        },
+        {
+          "feature": "not_text_hatch_dimension_or_internal_wall",
+          "weight": 10
+        }
+      ]
+    },
+    "floor_covered_polygon": {
+      "candidate_layers": [
+        "BSM-WE",
+        "FF-WE",
+        "SF-WE"
+      ],
+      "auto_accept_score": 85,
+      "needs_review_score": 60,
+      "scoring": [
+        {
+          "feature": "is_closed",
+          "weight": 30
+        },
+        {
+          "feature": "inside_or_aligned_with_plot_boundary",
+          "weight": 25
+        },
+        {
+          "feature": "largest_area_on_floor_external_wall_layer",
+          "weight": 20
+        },
+        {
+          "feature": "area_reasonable_against_plot_area",
+          "weight": 15
+        },
+        {
+          "feature": "floor_prefix_matches_layer_group",
+          "weight": 10
+        }
+      ]
+    },
+    "porch_polygon": {
+      "candidate_layers": [
+        "GF-PR",
+        "SITE-RMP"
+      ],
+      "auto_accept_score": 80,
+      "needs_review_score": 55,
+      "scoring": [
+        {
+          "feature": "is_closed",
+          "weight": 25
+        },
+        {
+          "feature": "near_front_side",
+          "weight": 30
+        },
+        {
+          "feature": "layer_is_porch_or_ramp",
+          "weight": 30
+        },
+        {
+          "feature": "area_reasonable_for_porch",
+          "weight": 15
+        }
+      ]
+    },
+    "service_polygon": {
+      "candidate_layers": [
+        "GF-SRV",
+        "FF-SRV",
+        "SF-SRV",
+        "BSM-SRV"
+      ],
+      "auto_accept_score": 75,
+      "needs_review_score": 55,
+      "scoring": [
+        {
+          "feature": "is_closed",
+          "weight": 25
+        },
+        {
+          "feature": "layer_is_service",
+          "weight": 30
+        },
+        {
+          "feature": "near_rear_corner_if_rear_toilet_rule",
+          "weight": 25
+        },
+        {
+          "feature": "near_service_text_label",
+          "weight": 20
+        }
+      ]
+    }
+  },
+
+  "threejs_display_policy": {
+    "colors_by_processing_role": {
+      "primary_geometry": "#00A86B",
+      "primary_floor_geometry": "#1E90FF",
+      "candidate_geometry": "#FFD166",
+      "measurement_reference": "#FF6B6B",
+      "layout_geometry": "#9B5DE5",
+      "component_geometry": "#BDBDBD",
+      "annotation_reference": "#808080",
+      "visual_only": "#D3D3D3",
+      "ignore": "#EEEEEE",
+      "structural_geometry": "#F77F00",
+      "utility_geometry": "#00B4D8",
+      "service_geometry": "#06D6A0",
+      "ancillary_geometry": "#F15BB5",
+      "open_space_geometry": "#80ED99"
+    },
+    "selection_metadata_required": [
+      "handle",
+      "layer",
+      "entity_type",
+      "semantic_entity",
+      "processing_role",
+      "area",
+      "perimeter",
+      "bbox",
+      "confidence_score",
+      "mapping_status"
+    ],
+    "mapping_status_colors": {
+      "auto_mapped": "green",
+      "needs_expert_review": "yellow",
+      "missing_required": "red",
+      "ignored": "gray",
+      "manual_mapped": "blue"
+    }
+  },
+
+  "validation_blocking_policy": {
+    "block_auto_approval_if_missing": [
+      "plot_boundary",
+      "ground_floor_covered_polygon"
+    ],
+    "send_to_expert_review_if": [
+      "multiple_plot_boundary_candidates",
+      "multiple_ground_floor_covered_polygon_candidates",
+      "front_side_not_detected",
+      "required_rule_input_missing",
+      "entity_confidence_below_auto_accept_score",
+      "floor_alignment_unknown",
+      "height_not_machine_readable",
+      "service_polygon_not_labeled"
+    ],
+    "allow_report_generation_even_if_review_required": true
+  }
+}

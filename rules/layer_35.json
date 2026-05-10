@@ -1,0 +1,290 @@
+{
+  "layers": {
+    "Plot Boundary": {
+      "description": "Plot boundary line",
+      "category": "site",
+      "tag": "plot_boundary"
+    },
+    "Boundary wall": {
+      "description": "Plot boundary wall / outer site boundary wall",
+      "category": "site",
+      "tag": "boundary_wall"
+    },
+    "Plot line": {
+      "description": "Plot line after road",
+      "category": "site",
+      "tag": "plot_line"
+    },
+    "Front building line": {
+      "description": "Front setback / front building control line",
+      "category": "site",
+      "tag": "front_building_line"
+    },
+    "Side building line": {
+      "description": "Side building line",
+      "category": "site",
+      "tag": "side_building_line"
+    },
+    "Rear Building line": {
+      "description": "Rear Building line",
+      "category": "site",
+      "tag": "rear_building_line"
+    },
+    "Section line": {
+      "description": "Section indicators (AA/BB etc.)",
+      "category": "reference",
+      "tag": "section_line"
+    },
+    "Ramp": {
+      "description": "Vehicle ramp porch",
+      "category": "site",
+      "tag": "ramp"
+    },
+    "Landscape": {
+      "description": "Lawn / green area / open space / Landscape hatch",
+      "category": "site",
+      "tag": "landscape"
+    },
+    "Dimensions": {
+      "description": "Dimension / secondary dimensions",
+      "category": "reference",
+      "tag": "dimensions"
+    },
+    "Measurement Text": {
+      "description": "Dimensions measurement text",
+      "category": "reference",
+      "tag": "measurement_text"
+    },
+    "Text General": {
+      "description": "General notes / annotations",
+      "category": "reference",
+      "tag": "text_general"
+    },
+    "External walls": {
+      "description": "External walls",
+      "category": "building",
+      "tag": "external_walls"
+    },
+    "Internal walls": {
+      "description": "Internal walls",
+      "category": "building",
+      "tag": "internal_walls"
+    },
+    "Door": {
+      "description": "Doors",
+      "category": "components",
+      "tag": "door"
+    },
+    "Windows": {
+      "description": "Windows / Standard window elements / annotations",
+      "category": "components",
+      "tag": "windows"
+    },
+    "Ventilator": {
+      "description": "Ventilator / roshandan",
+      "category": "components",
+      "tag": "ventilator"
+    },
+    "Stairs": {
+      "description": "Staircase from ground to first floor",
+      "category": "building",
+      "tag": "stairs"
+    },
+    "Porch": {
+      "description": "Porch / car porch",
+      "category": "building",
+      "tag": "porch"
+    },
+    "Services": {
+      "description": "Items of Kitchen/toilet shafts/services",
+      "category": "utilities",
+      "tag": "services"
+    },
+    "Mumty": {
+      "description": "Stair cover / mumty structure",
+      "category": "roof",
+      "tag": "mumty"
+    },
+    "Water tank": {
+      "description": "Overhead water tank/Underground water tank",
+      "category": "utilities",
+      "tag": "water_tank"
+    },
+    "OTS Patio": {
+      "description": "Open to sky area inside building",
+      "category": "building",
+      "tag": "ots_patio"
+    },
+    "Parapet wall": {
+      "description": "Roof parapet wall",
+      "category": "roof",
+      "tag": "parapet_wall"
+    },
+    "Column": {
+      "description": "Structural columns",
+      "category": "structure",
+      "tag": "column"
+    },
+    "Beam": {
+      "description": "Structural beams",
+      "category": "structure",
+      "tag": "beam"
+    },
+    "Slab": {
+      "description": "Slab edges / slab references",
+      "category": "structure",
+      "tag": "slab"
+    },
+    "Foundation": {
+      "description": "Wall foundations details",
+      "category": "structure",
+      "tag": "foundation"
+    },
+    "Hatch": {
+      "description": "Primary hatch / material fill",
+      "category": "materials",
+      "tag": "hatch"
+    },
+    "Pavement": {
+      "description": "Pavement / paving / flooring",
+      "category": "materials",
+      "tag": "pavement"
+    },
+    "Rain Water tank": {
+      "description": "Rain Water tank",
+      "category": "utilities",
+      "tag": "rain_water_tank"
+    },
+    "Sewer line": {
+      "description": "Sewerage line",
+      "category": "utilities",
+      "tag": "sewer_line"
+    },
+    "Terrace": {
+      "description": "Terrace",
+      "category": "building",
+      "tag": "terrace"
+    },
+    "Solar": {
+      "description": "Solar panel layout",
+      "category": "roof",
+      "tag": "solar"
+    },
+    "Floor Level": {
+      "description": "Floor level from Road Level",
+      "category": "reference",
+      "tag": "floor_level"
+    },
+    "Extra": {
+      "description": "Extra Detailing",
+      "category": "reference",
+      "tag": "extra"
+    },
+    "Defpoints": {
+      "description": "AutoCAD default definition/reference points / inbuilt",
+      "category": "reference",
+      "tag": "defpoints"
+    },
+    "0": {
+      "description": "AutoCAD default layer",
+      "category": "reference",
+      "tag": "autocad_default"
+    }
+  },
+  "rules_to_layers": {
+    "PLOT_BOUNDARY_DETECTION": [
+      "Plot Boundary",
+      "Boundary wall",
+      "Plot line"
+    ],
+    "FRONT_SETBACK_CHECK": [
+      "Plot Boundary",
+      "Front building line",
+      "External walls",
+      "Dimensions",
+      "Measurement Text"
+    ],
+    "SIDE_SETBACK_CHECK": [
+      "Plot Boundary",
+      "Side building line",
+      "External walls",
+      "Dimensions",
+      "Measurement Text"
+    ],
+    "REAR_SETBACK_CHECK": [
+      "Plot Boundary",
+      "Rear Building line",
+      "External walls",
+      "Dimensions",
+      "Measurement Text"
+    ],
+    "BUILDING_FOOTPRINT_AREA": [
+      "External walls",
+      "Internal walls",
+      "Porch",
+      "OTS Patio"
+    ],
+    "GROUND_COVERAGE": [
+      "Plot Boundary",
+      "External walls",
+      "Porch",
+      "OTS Patio"
+    ],
+    "OPEN_SPACE_LANDSCAPE": [
+      "Landscape",
+      "Pavement",
+      "Plot Boundary",
+      "External walls"
+    ],
+    "PORCH_VALIDATION": [
+      "Porch",
+      "Ramp",
+      "Front building line",
+      "Dimensions",
+      "Measurement Text"
+    ],
+    "STAIR_MUMTY_CHECK": [
+      "Stairs",
+      "Mumty",
+      "Section line"
+    ],
+    "ROOF_FEATURES_CHECK": [
+      "Mumty",
+      "Water tank",
+      "Parapet wall",
+      "Solar",
+      "Terrace"
+    ],
+    "STRUCTURAL_ELEMENTS_CHECK": [
+      "Column",
+      "Beam",
+      "Slab",
+      "Foundation"
+    ],
+    "SERVICES_CHECK": [
+      "Services",
+      "Water tank",
+      "Rain Water tank",
+      "Sewer line"
+    ],
+    "VENTILATION_LIGHT_CHECK": [
+      "Windows",
+      "Ventilator",
+      "OTS Patio"
+    ],
+    "FLOOR_LEVEL_CHECK": [
+      "Floor Level",
+      "Section line",
+      "Measurement Text"
+    ],
+    "ANNOTATION_AND_REFERENCE": [
+      "Dimensions",
+      "Measurement Text",
+      "Text General",
+      "Section line",
+      "Extra",
+      "Defpoints",
+      "0"
+    ]
+  }
+}

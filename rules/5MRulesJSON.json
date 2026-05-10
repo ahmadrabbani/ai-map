@@ -15,16 +15,16 @@
       "type": "setback",
       "title": "Front setback requirement",
       "value_ft": 5,
-      "operator": ">=",
-      "description": "Minimum 5 ft front setback for 5 Marla in approved schemes."
+      "operator": "<=",
+      "description": "Maximum 5 ft front setback for 5 Marla in approved schemes."
     },
     {
       "id": "SETBACK_REAR",
       "type": "setback",
       "title": "Rear setback requirement",
       "value_ft": 5,
-      "operator": ">=",
-      "description": "Minimum 5 ft rear setback for 5 Marla residential plots."
+      "operator": "<=",
+      "description": "Maximum 5 ft rear setback for 5 Marla residential plots."
     },
     {
       "id": "SETBACK_SIDE",

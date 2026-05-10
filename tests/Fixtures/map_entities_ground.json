@@ -1,0 +1,33 @@
+[
+  {
+    "handle": "PLOT001",
+    "layer_name": "SITE-PL",
+    "entity_type": "LWPOLYLINE",
+    "points": [[0, 0], [50, 0], [50, 45], [0, 45], [0, 0]],
+    "bbox": { "min_x": 0, "min_y": 0, "max_x": 50, "max_y": 45 },
+    "area": 2250,
+    "perimeter": 190,
+    "is_closed": true
+  },
+  {
+    "handle": "GF001",
+    "layer_name": "GF-WE",
+    "entity_type": "LWPOLYLINE",
+    "points": [[5, 5], [40, 5], [40, 35], [5, 35], [5, 5]],
+    "bbox": { "min_x": 5, "min_y": 5, "max_x": 40, "max_y": 35 },
+    "area": 1050,
+    "perimeter": 130,
+    "is_closed": true
+  },
+  {
+    "handle": "GFI001",
+    "layer_name": "GF-WI",
+    "entity_type": "LWPOLYLINE",
+    "points": [[10, 10], [15, 10], [15, 15], [10, 15], [10, 10]],
+    "bbox": { "min_x": 10, "min_y": 10, "max_x": 15, "max_y": 15 },
+    "area": 25,
+    "perimeter": 20,
+    "is_closed": true
+  }
+]
+

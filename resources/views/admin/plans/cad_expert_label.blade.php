@@ -249,6 +249,26 @@
             min-height: 300px;
         }
 
+        .viewer-frame {
+            width: 100%;
+            border: 1px solid rgba(16, 20, 24, 0.08);
+            border-radius: var(--radius-sm);
+            margin-top: 12px;
+            min-height: 680px;
+            background: #fff;
+        }
+
+        .workspace-switch {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .workspace-switch .pill-btn {
+            text-decoration: none;
+        }
+
         .footer {
             margin-top: 48px;
             display: flex;
@@ -257,6 +277,100 @@
             gap: 12px;
             color: var(--muted);
             font-size: 0.9rem;
+        }
+
+        .alert {
+            padding: 14px 16px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--line);
+            background: rgba(242, 139, 45, 0.1);
+            margin-bottom: 18px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            background: rgba(15, 107, 95, 0.12);
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .mapping-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.9fr);
+            gap: 10px;
+            align-items: start;
+        }
+
+        .mapping-row {
+            display: contents;
+        }
+
+        .mapping-cell {
+            padding: 10px 12px;
+            border: 1px solid rgba(16, 20, 24, 0.08);
+            border-radius: var(--radius-sm);
+            background: #fcfbfa;
+        }
+
+        .mapping-cell strong {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .compact-select {
+            width: 100%;
+            min-width: 0;
+            border-radius: 12px;
+        }
+
+        .manual-layer-input {
+            margin-top: 8px;
+        }
+
+        .section-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 0 0 10px;
+        }
+
+        .floor-switcher {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .pill-btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 7px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: #fff;
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+
+        .pill-btn.active {
+            background: rgba(15, 107, 95, 0.12);
+            color: var(--accent);
+            border-color: rgba(15, 107, 95, 0.22);
+            font-weight: 700;
+        }
+
+        .helper-strip {
+            margin-bottom: 16px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: rgba(15, 107, 95, 0.08);
+            color: var(--muted);
+            font-size: 0.92rem;
         }
 
         @media (max-width: 900px) {
@@ -271,6 +385,10 @@
             }
 
             .page-header {
+                grid-template-columns: 1fr;
+            }
+
+            .mapping-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -298,23 +416,34 @@
             </nav>
             <div class="actions">
                 <a class="btn ghost" href="{{ route('admin.plan.cad-compliance.form') }}">Back to compliance</a>
-                <a class="btn primary" href="#labels">Save labels</a>
+                <a class="btn primary" href="#labels">Open mapping</a>
             </div>
         </header>
 
         <main>
+            @if($errors->any())
+                <div class="alert">
+                    <strong>Please review the form.</strong>
+                    <ul style="margin: 10px 0 0 18px;">
+                        @foreach($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             <section class="page-header">
                 <div>
-                    <h1>Expert marking workspace</h1>
+                    <h1>Layer selection and expert marking</h1>
                     <p>
-                        Map layers and entities to semantic roles so the system learns how to measure plot, footprint,
-                        dimensions, and front-side context.
+                        Match each uploaded CAD layer to the official JSON-defined layer structure so the system can map
+                        plot boundary, floors, setbacks, dimensions, and text correctly before rerun.
                     </p>
                 </div>
                 <div class="status-card">
-                    <strong>Trainable labels enabled</strong>
+                    <strong>Guideline-based mapping enabled</strong>
                     <p class="muted" style="color: rgba(255, 255, 255, 0.78); margin: 10px 0 0;">
-                        Use layer mappings or entity handles to refine compliance accuracy.
+                        Use detected layers first. Use entity handles only when the drawing does not follow the layer guideline.
                     </p>
                 </div>
             </section>
@@ -331,54 +460,97 @@
                 @endif
             </section>
 
-            <section class="grid two" style="margin-top: 24px;">
-                <div class="card">
-                    <h3>Submission reference</h3>
-                    <div style="margin: 8px 0 14px;">
-                        <a class="btn ghost" href="{{ route('admin.plan.cad-layer-viewer', $submission->id) }}">Open 3D layer viewer</a>
-                    </div>
-                    <div><strong>ID:</strong> {{ $submission->id }}</div>
-                    <div><strong>File:</strong> {{ $submission->original_filename }}</div>
-                    @if($submission->drawing_pdf_path)
-                        <div style="margin-top: 16px;">
-                            <a class="btn ghost" href="{{ route('admin.plan.cad-compliance.drawing', ['id' => $submission->id]) }}" target="_blank">Open drawing PDF</a>
-                        </div>
-                        <iframe class="iframe" src="{{ route('admin.plan.cad-compliance.drawing', ['id' => $submission->id]) }}"></iframe>
-                    @endif
-                    @if($submission->overlay_pdf_path)
-                        <div style="margin-top: 16px;">
-                            <a class="btn ghost" href="{{ route('admin.plan.cad-compliance.overlay', ['id' => $submission->id]) }}" target="_blank">Open overlay PDF</a>
-                        </div>
-                        <iframe class="iframe" style="min-height: 420px;" src="{{ route('admin.plan.cad-compliance.overlay', ['id' => $submission->id]) }}"></iframe>
-                    @else
-                        <div class="muted" style="margin-top: 10px;">No overlay PDF available yet.</div>
-                    @endif
-                </div>
-
+            <section style="margin-top: 24px;">
                 <div class="card" id="labels">
-                    <h3>Step 1: Layer mapping</h3>
+                    <div class="helper-strip" style="margin-bottom: 18px;">
+                        Use one focused CAD screen: open the dedicated viewer for layer highlighting and measurements, then return here to finalize layer mapping.
+                        <div class="workspace-switch" style="margin-top:10px;">
+                            <a class="pill-btn active" href="{{ route('admin.plan.cad-layer-viewer', array_merge(['id' => $submission->id], ['floor_context' => $floorContext])) }}" target="_blank">Open CAD viewer</a>
+                            <a class="pill-btn" href="#labels">Stay on mapping form</a>
+                        </div>
+                    </div>
+                    <div class="section-head">
+                        <div>
+                            <h3 style="margin: 0;">Step 1: Map uploaded layers to official layer definitions</h3>
+                            <div class="muted" style="margin-top: 6px;">Only layers relevant to the selected floor are shown.</div>
+                        </div>
+                        <div class="floor-switcher">
+                            @foreach([
+                                'basement' => 'Basement',
+                                'ground_floor' => 'Ground',
+                                'first_floor' => 'First',
+                                'second_floor' => 'Second',
+                                'roof' => 'Roof',
+                            ] as $floorKey => $floorLabel)
+                                <a
+                                    href="{{ route('admin.plan.cad-expert-label.edit', ['id' => $submission->id, 'floor_context' => $floorKey]) }}"
+                                    class="pill-btn {{ $floorContext === $floorKey ? 'active' : '' }}"
+                                >
+                                    {{ $floorLabel }}
+                                </a>
+                            @endforeach
+                        </div>
+                    </div>
+                    <div class="helper-strip">
+                        Editing context: <strong>{{ ucwords(str_replace('_', ' ', $floorContext)) }}</strong>.
+                        Common site and reference layers remain visible, but unrelated floor categories are hidden to reduce clutter.
+                    </div>
                     <form action="{{ route('admin.plan.cad-expert-label.store', ['id' => $submission->id]) }}" method="POST">
                         @csrf
+                        <input type="hidden" name="floor_context" value="{{ $floorContext }}">
 
-                        <div class="field">
-                            <label><strong>Plot boundary layer</strong></label>
-                            <input type="text" name="plot_layer" value="{{ old('plot_layer', $label->plot_layer) }}" placeholder="e.g. PLOT / BOUNDARY">
-                        </div>
-
-                        <div class="field">
-                            <label><strong>Building footprint layer</strong></label>
-                            <input type="text" name="building_layer" value="{{ old('building_layer', $label->building_layer) }}" placeholder="e.g. WALLS / GF_OUTLINE">
-                        </div>
-
-                        <div class="field">
-                            <label><strong>Dimension layer</strong></label>
-                            <input type="text" name="dimension_layer" value="{{ old('dimension_layer', $label->dimension_layer) }}" placeholder="e.g. DIM">
-                        </div>
-
-                        <div class="field">
-                            <label><strong>Text/Notes layer</strong></label>
-                            <input type="text" name="text_layer" value="{{ old('text_layer', $label->text_layer) }}" placeholder="e.g. TEXT">
-                        </div>
+                        @foreach($layerGroups as $category => $definitions)
+                            <div style="margin-bottom: 18px;">
+                                <h4 style="margin: 0 0 10px;">{{ ucwords(str_replace('_', ' ', $category)) }}</h4>
+                                <div class="mapping-grid">
+                                    @foreach($definitions as $definition)
+                                        @php
+                                            $selectedLayer = old('official_layer_map.'.$definition['tag'], $currentLayerMap[$definition['tag']] ?? '');
+                                            $datalistId = 'layer_options_'.$definition['tag'];
+                                        @endphp
+                                        <div class="mapping-row">
+                                            <div class="mapping-cell">
+                                                <strong>{{ $definition['code'] }}</strong>
+                                                <div class="muted">{{ $definition['description'] }}</div>
+                                                <div style="margin-top: 8px;"><span class="badge">{{ $definition['tag'] }}</span></div>
+                                            </div>
+                                            <div class="mapping-cell">
+                                                <label for="official_layer_map_{{ $definition['tag'] }}" class="muted" style="display:block; margin-bottom:6px;"><strong>Detected CAD layer</strong></label>
+                                                <select
+                                                    id="official_layer_map_{{ $definition['tag'] }}"
+                                                    class="compact-select"
+                                                    onchange="document.getElementById('manual_layer_{{ $definition['tag'] }}').value = this.value;"
+                                                >
+                                                    <option value="">Leave unmapped</option>
+                                                    @foreach($layers as $detectedLayer)
+                                                        <option value="{{ $detectedLayer->layer }}" {{ $selectedLayer === $detectedLayer->layer ? 'selected' : '' }}>
+                                                            {{ $detectedLayer->layer }}{{ isset($detectedLayer->cnt) ? ' ('.$detectedLayer->cnt.')' : '' }}
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                                <input
+                                                    id="manual_layer_{{ $definition['tag'] }}"
+                                                    type="text"
+                                                    name="official_layer_map[{{ $definition['tag'] }}]"
+                                                    value="{{ $selectedLayer }}"
+                                                    class="manual-layer-input"
+                                                    list="{{ $datalistId }}"
+                                                    placeholder="Type or adjust layer name manually"
+                                                >
+                                                <datalist id="{{ $datalistId }}">
+                                                    @foreach($layers as $detectedLayer)
+                                                        <option value="{{ $detectedLayer->layer }}"></option>
+                                                    @endforeach
+                                                </datalist>
+                                                <div class="muted" style="margin-top: 8px;">
+                                                    Maps uploaded layer to <code>{{ $definition['tag'] }}</code>.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endforeach
 
                         <div class="field">
                             <label><strong>Front side</strong> (helps setbacks)</label>
@@ -394,8 +566,8 @@
                             <textarea name="notes" rows="3" placeholder="Any layer conventions, special cases...">{{ old('notes', $label->notes) }}</textarea>
                         </div>
 
-                        <h3 style="margin: 18px 0 6px;">Step 2: Entity handles</h3>
-                        <div class="muted" style="margin-bottom: 10px;">Pick exact closed polylines if layer names are inconsistent.</div>
+                        <h3 style="margin: 18px 0 6px;">Step 2: Manual geometry override</h3>
+                        <div class="muted" style="margin-bottom: 10px;">Use exact handles only if the uploaded drawing does not follow the layer guideline or the wrong polygon is still being selected.</div>
 
                         <div class="field">
                             <label><strong>Plot polyline handle</strong></label>
@@ -407,11 +579,18 @@
                             <input type="text" name="building_entity_handle" value="{{ old('building_entity_handle', $label->building_entity_handle) }}" placeholder="Handle from candidates table below">
                         </div>
 
-                        <button class="btn primary" type="submit">Save labels</button>
+                        <div class="field">
+                            <label><strong>Floor handles JSON</strong></label>
+                            <textarea name="floor_handles_json" rows="4" placeholder='[{"floor":0,"handle":"1A2B"},{"floor":1,"handle":"1A2C"}]'>{{ old('floor_handles_json', optional($submission->trainingLabel)->floor_handles ? json_encode($submission->trainingLabel->floor_handles, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '') }}</textarea>
+                            <div class="muted">Use this when multiple floor polygons must be selected manually after layer mapping is complete.</div>
+                        </div>
+
+                        <button class="btn primary" type="submit">Save layer mapping</button>
                     </form>
 
                     <div style="margin-top: 22px;">
-                        <h4>Layer summary</h4>
+                        <h4>Detected CAD layers</h4>
+                        <div class="muted" style="margin-bottom: 8px;">These are the layers found in the uploaded drawing. Use them in the mapping selectors above.</div>
                         <table>
                             <thead><tr><th>Layer</th><th>Entities</th></tr></thead>
                             <tbody>
@@ -424,7 +603,7 @@
 
                     <div style="margin-top: 22px;">
                         <h4>Closed polyline candidates (top 50 by area)</h4>
-                        <div class="muted">Use these handles for entity-level labeling if needed.</div>
+                        <div class="muted">Use these handles only when layer-based mapping is not enough and you need to override plot or footprint selection manually.</div>
                         <table style="margin-top: 8px;">
                             <thead>
                             <tr>
@@ -458,5 +637,39 @@
         </footer>
     </div>
 </div>
+<script>
+    (function () {
+        const allowedOrigin = window.location.origin;
+        window.addEventListener('message', function (event) {
+            if (event.origin !== allowedOrigin || !event.data || event.data.type !== 'cad-layer-map-suggestion') {
+                return;
+            }
+
+            const payload = event.data.payload || {};
+            const officialTag = payload.officialTag || '';
+            const layerName = payload.layerName || '';
+            if (!officialTag || !layerName) {
+                return;
+            }
+
+            const select = document.getElementById('official_layer_map_' + officialTag);
+            const input = document.getElementById('manual_layer_' + officialTag);
+            if (select) {
+                let option = Array.from(select.options).find((opt) => opt.value === layerName);
+                if (!option) {
+                    option = document.createElement('option');
+                    option.value = layerName;
+                    option.textContent = layerName + ' (mapped from viewer)';
+                    select.appendChild(option);
+                }
+                select.value = layerName;
+            }
+            if (input) {
+                input.value = layerName;
+                input.focus();
+            }
+        });
+    })();
+</script>
 </body>
 </html>

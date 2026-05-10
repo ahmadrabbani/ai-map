@@ -12,19 +12,23 @@ class CadRuleResult extends Model
     protected $fillable = [
         'cad_submission_id',
         'source',
+        'measurement_source',
         'rule_id',
         'rule_type',
         'title',
         'required_value',
         'measured_value',
+        'system_measured_value',
         'unit',
         'operator',
         'is_compliant',
         'details',
+        'measurement_points_json',
     ];
 
     protected $casts = [
         'is_compliant' => 'boolean',
+        'measurement_points_json' => 'array',
     ];
 
     public function submission()

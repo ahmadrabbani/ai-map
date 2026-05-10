@@ -44,7 +44,12 @@
 
         .page {
             position: relative;
-            overflow: hidden;
+            overflow-x: hidden;
+        }
+
+        html, body {
+            min-width: 0;
+            overflow-x: hidden;
         }
 
         .page::before {
@@ -183,7 +188,14 @@
         }
 
         .grid.two {
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            align-items: start;
+        }
+
+        .results-card {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
         }
 
         .card {
@@ -192,6 +204,7 @@
             padding: 20px;
             border: 1px solid var(--line);
             box-shadow: 0 16px 30px rgba(16, 20, 24, 0.08);
+            overflow: hidden;
         }
 
         .card h2,
@@ -232,15 +245,46 @@
             font-weight: 600;
         }
 
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .status-pass { background: #e9f7f2; color: #0f6b5f; }
+        .status-fail { background: #ffe9e9; color: #b21c1c; }
+        .status-review { background: #fff6e6; color: #946200; }
+        .status-warn { background: #eef3ff; color: #2647a0; }
+
+        .reason-box {
+            margin: 10px 0 14px;
+            border: 1px solid #f2d6a6;
+            background: #fff9ee;
+            color: #6f4b0f;
+            border-radius: 10px;
+            padding: 10px 12px;
+        }
+
         .bad {
             color: #b21c1c;
             font-weight: 600;
+        }
+
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            margin-top: 10px;
         }
 
         .table {
             width: 100%;
             border-collapse: collapse;
             font-size: 0.95rem;
+            table-layout: fixed;
+            min-width: 560px;
         }
 
         .table th,
@@ -249,6 +293,8 @@
             padding: 10px 6px;
             border-bottom: 1px solid rgba(16, 20, 24, 0.08);
             vertical-align: top;
+            word-break: break-word;
+            white-space: normal;
         }
 
         .iframe {
@@ -256,7 +302,8 @@
             border: 1px solid rgba(16, 20, 24, 0.08);
             border-radius: var(--radius-sm);
             margin-top: 12px;
-            min-height: 280px;
+            min-height: 320px;
+            max-height: 520px;
         }
 
         .footer {
@@ -318,11 +365,17 @@
             @endphp
 
             <section class="page-header">
+                @php
+                    $activeLayerConfig = file_exists(base_path('rules/layer_35.json')) ? 'layer_35.json' : 'layers.json';
+                @endphp
                 <div>
                     <h1>CAD compliance workspace</h1>
                     <p>
                         Review DWG submissions, run rule checks, and deliver audit-ready overlays without leaving the
                         dashboard.
+                    </p>
+                    <p class="muted" style="margin-top:10px;">
+                        Active layer config: <strong>{{ $activeLayerConfig }}</strong>
                     </p>
                 </div>
                 <div class="status-card">
@@ -367,6 +420,13 @@
                         <div><strong>ID:</strong> {{ $submission->id }}</div>
                         <div style="margin-top: 10px;">
                             <a class="btn ghost" href="{{ route('admin.plan.cad-expert-label.edit', ['id' => $submission->id]) }}">Expert marking</a>
+                            <form method="POST" action="{{ route('admin.plan.cad-compliance.semantic-pipeline', ['id' => $submission->id]) }}" style="display:inline;">
+                                @csrf
+                                <button type="submit" class="btn primary">Run semantic mapping + validation</button>
+                            </form>
+                            @if(!empty($semanticDrawing))
+                                <a class="btn ghost" href="{{ route('admin.plan.cad-layer-viewer', ['id' => $submission->id, 'map_drawing_id' => $semanticDrawing->id]) }}">Open semantic viewer</a>
+                            @endif
                         </div>
                         @if($submission->drawing_pdf_path)
                             <div style="margin-top: 18px;">
@@ -386,19 +446,20 @@
                         @endif
                     </div>
 
-                    <div class="card">
+                    <div class="card results-card">
                         <h3>System Results</h3>
                         @if($results_system && count($results_system))
-                            <table class="table">
-                                <thead>
-                                <tr>
-                                    <th>Rule</th>
-                                    <th>Required</th>
-                                    <th>Measured</th>
-                                    <th>Status</th>
-                                </tr>
-                                </thead>
-                                <tbody>
+                            <div class="table-wrapper">
+                                <table class="table">
+                                    <thead>
+                                    <tr>
+                                        <th>Rule</th>
+                                        <th>Required</th>
+                                        <th>Measured</th>
+                                        <th>Status</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
                                 @foreach($results_system as $r)
                                     <tr>
                                         <td>
@@ -423,22 +484,24 @@
                                 @endforeach
                                 </tbody>
                             </table>
+                            </div>
                         @else
                             <div class="muted">No system results yet.</div>
                         @endif
 
                         <h3 style="margin-top: 22px;">Expert Results</h3>
                         @if($results_expert && count($results_expert))
-                            <table class="table">
-                                <thead>
-                                <tr>
-                                    <th>Rule</th>
-                                    <th>Required</th>
-                                    <th>Measured</th>
-                                    <th>Status</th>
-                                </tr>
-                                </thead>
-                                <tbody>
+                            <div class="table-wrapper">
+                                <table class="table">
+                                    <thead>
+                                    <tr>
+                                        <th>Rule</th>
+                                        <th>Required</th>
+                                        <th>Measured</th>
+                                        <th>Status</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
                                 @foreach($results_expert as $r)
                                     <tr>
                                         <td>
@@ -463,8 +526,71 @@
                                 @endforeach
                                 </tbody>
                             </table>
+                            </div>
                         @else
                             <div class="muted">No expert results yet.</div>
+                        @endif
+
+                        <h3 style="margin-top: 22px;">Semantic Validation Report</h3>
+                        @if(!empty($semanticReport))
+                            <div class="muted" style="margin-bottom:8px;">
+                                Status: <strong>{{ $semanticReport['status'] ?? 'unknown' }}</strong> |
+                                Ready for submission: <strong>{{ !empty($semanticReport['ready_for_submission']) ? 'Yes' : 'No' }}</strong>
+                            </div>
+                            @if(($semanticReport['status'] ?? null) === 'needs_expert_review')
+                                <div class="reason-box">
+                                    <div><strong>Why this is under review</strong></div>
+                                    <ul style="margin:8px 0 0 18px; padding:0;">
+                                        @forelse(($semanticReport['expert_review_reasons'] ?? []) as $reason)
+                                            <li>{{ str_replace('_', ' ', (string) $reason) }}</li>
+                                        @empty
+                                            <li>One or more rules need manual review due to missing or ambiguous geometry inputs.</li>
+                                        @endforelse
+                                    </ul>
+                                </div>
+                            @endif
+                            @if(!empty($semanticRuleRows))
+                                <div class="table-wrapper">
+                                    <table class="table">
+                                        <thead>
+                                        <tr>
+                                            <th>Rule</th>
+                                            <th>Required</th>
+                                            <th>Actual</th>
+                                            <th>Status</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                        @foreach($semanticRuleRows as $row)
+                                            @php
+                                                $st = strtolower((string) ($row['status'] ?? ''));
+                                                $cls = match ($st) {
+                                                    'pass' => 'status-pass',
+                                                    'fail' => 'status-fail',
+                                                    'warn' => 'status-warn',
+                                                    default => 'status-review',
+                                                };
+                                            @endphp
+                                            <tr>
+                                                <td>
+                                                    <div><strong>{{ $row['rule_code'] ?? '-' }}</strong></div>
+                                                    @if(!empty($row['message']))
+                                                        <div class="muted">{{ $row['message'] }}</div>
+                                                    @endif
+                                                </td>
+                                                <td>{{ $row['required'] ?? '-' }}</td>
+                                                <td>{{ $row['actual'] ?? '-' }}</td>
+                                                <td><span class="status-badge {{ $cls }}">{{ strtoupper($row['status'] ?? '-') }}</span></td>
+                                            </tr>
+                                        @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            @else
+                                <div class="muted">Semantic report exists but has no rule rows.</div>
+                            @endif
+                        @else
+                            <div class="muted">No semantic validation report yet. Run “semantic mapping + validation”.</div>
                         @endif
                     </div>
                 </section>

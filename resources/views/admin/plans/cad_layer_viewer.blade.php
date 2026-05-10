@@ -186,8 +186,23 @@
 
     .canvas-wrap { position: absolute; inset: 52px 0 0 0; }
     #cad-canvas { width: 100%; height: 100%; display: block; }
-    .layer-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed rgba(16, 20, 24, 0.1); }
+    #cad-canvas.measuring { cursor: crosshair; }
+    .layer-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed rgba(16, 20, 24, 0.1); cursor: pointer; }
+    .layer-row.selected { background: rgba(15, 107, 95, 0.08); border-left: 3px solid var(--accent); padding-left: 10px; }
     .layer-name { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .layer-info-popup {
+      position: absolute;
+      top: 78px;
+      right: 18px;
+      max-width: 320px;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(16, 20, 24, 0.12);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 18px 36px rgba(16, 20, 24, 0.12);
+      z-index: 3;
+      font-size: 12px;
+    }
     select, button { padding: 8px 10px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-family: inherit; }
     button { cursor: pointer; }
     input[type="text"], input[type="number"], textarea { padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; font-family: inherit; }
@@ -267,6 +282,7 @@
           <a href="/">Home</a>
           <a href="/admin/plan/cad-compliance">CAD Compliance</a>
           <a href="{{ route('admin.plan.cad-expert-label.edit', $submission->id) }}">Expert Labels</a>
+          <a href="{{ route('admin.plan.cad-planner-review', ['id' => $submission->id, 'map_drawing_id' => optional($mapDrawing)->id]) }}">Planner Review</a>
           <a href="{{ route('admin.plan.cad-layer-viewer', $submission->id) }}">Layer Viewer</a>
         </nav>
         <div class="actions">
@@ -282,6 +298,9 @@
   </div>
 
   <script src="/vendor/dxf-parser/dxf-parser.js"></script>
+  @php
+    $activeLayerConfig = file_exists(base_path('rules/layer_35.json')) ? 'layer_35.json' : 'layers.json';
+  @endphp
   <script>
     window.__cadViewerConfig = {
       submissionId: {{ $submission->id }},
@@ -292,9 +311,39 @@
       csrfToken: "{{ csrf_token() }}",
       layerMap: @json($layerMap ?? new stdClass()),
       rules: @json($rules ?? []),
+      rulesMetadata: @json($rulesMetadata ?? new stdClass()),
       expertResults: @json($expertResults ?? []),
+      analysisResult: @json($submission->analysis_result ?? new stdClass()),
+      trainingLabel: @json(optional($submission->trainingLabel)->toArray() ?? new stdClass()),
+      entitySummary: @json($entitySummary ?? new stdClass()),
+      rulesetOverview: @json($rulesetOverview ?? new stdClass()),
+      tagOptions: @json($tagOptions ?? []),
+      floorContext: @json(request('floor_context', '')),
+      mapDrawingId: @json(optional($mapDrawing)->id),
+      mapEntitiesUrl: @json(optional($mapDrawing)->id ? route('api.map-approval.entities', ['drawing' => $mapDrawing->id]) : null),
+      mapSummaryUrl: @json(optional($mapDrawing)->id ? route('api.map-approval.mapping-summary', ['drawing' => $mapDrawing->id]) : null),
+      mapSuggestionsUrl: @json(optional($mapDrawing)->id ? route('api.map-approval.layer-suggestions', ['drawing' => $mapDrawing->id]) : null),
+      mapManualMapUrl: @json(optional($mapDrawing)->id ? route('api.map-approval.manual-map', ['drawing' => $mapDrawing->id]) : null),
+      mapValidationUrl: @json(optional($mapDrawing)->id ? route('api.map-approval.run-validation', ['drawing' => $mapDrawing->id]) : null),
+      mapReportUrl: @json(optional($mapDrawing)->id ? route('api.map-approval.report', ['drawing' => $mapDrawing->id]) : null),
+      cadEntitiesUrl: "{{ route('admin.plan.cad-entities.index', $submission->id) }}",
+      cadLabelsUrl: "{{ route('admin.plan.cad-labels.index', $submission->id) }}",
+      cadLabelMappingsStoreUrl: "{{ route('admin.plan.cad-label-mappings.store', $submission->id) }}",
+      cadAutoSuggestMappingsUrl: "{{ route('admin.plan.cad-label-mappings.auto-suggest', $submission->id) }}",
+      cadMappingReportUrl: "{{ route('admin.plan.cad-label-mappings.report', $submission->id) }}",
+      cadLabelMappingsDeleteUrlTemplate: "/admin/plan/cad-submissions/{{ $submission->id }}/label-mappings/__MAPPING_ID__",
+      expertMarkingsUrl: "{{ route('admin.plan.cad-expert-markings.index', $submission->id) }}",
+      expertMarkingsStoreUrl: "{{ route('admin.plan.cad-expert-markings.store', $submission->id) }}",
+      expertMarkingsUpdateUrlTemplate: "/admin/plan/cad-submissions/{{ $submission->id }}/expert-markings/__MARKING_ID__",
+      expertMarkingsDeleteUrlTemplate: "/admin/plan/cad-submissions/{{ $submission->id }}/expert-markings/__MARKING_ID__",
+      expertMarkingsConfirmUrlTemplate: "/admin/plan/cad-submissions/{{ $submission->id }}/expert-markings/__MARKING_ID__/confirm",
+      expertMarkingReportUrl: "{{ route('admin.plan.cad-expert-markings.report', $submission->id) }}",
+      cadTextReferencesStoreUrl: "{{ route('admin.plan.cad-text-references.store', $submission->id) }}",
+      cadAssistantChatUrl: "{{ route('admin.plan.cad-assistant-chat', $submission->id) }}",
+      activeLayerConfig: @json($activeLayerConfig),
       statusMessage: @json(session('status')),
       hasDxf: {{ $submission->stored_dxf_path ? 'true' : 'false' }},
+      autoMapOnLoad: true,
     };
   </script>
   @viteReactRefresh

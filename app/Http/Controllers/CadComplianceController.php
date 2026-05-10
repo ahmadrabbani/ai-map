@@ -5,7 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\CadRuleResult;
 use App\Models\CadSubmission;
 use App\Models\CadEntityFeature;
+use App\Models\MapDrawing;
 use App\Services\CadComplianceService;
+use App\Services\MapApproval\GeometryCalculationService;
+use App\Services\MapApproval\MapApprovalPipelineService;
+use App\Services\MapApproval\MapApprovalReportService;
+use App\Services\MapApproval\RuleValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -15,14 +20,9 @@ class CadComplianceController extends Controller
 {
     public function index()
     {
-        return view('admin.plans.cad_compliance', [
-            'submission' => null,
-            'results_system'    => null,
-            'results_expert'    => null,
-            // Don't pass a key named 'errors' to a Blade view. Laravel uses $errors
-            // internally for validation error bags.
-            'errorMessage' => null,
-        ]);
+        // Keep legacy URL as public entrypoint, but route users to the
+        // simplified applicant workflow (text-first upload + portal + chat).
+        return redirect()->route('admin.plan.bp.index');
     }
 
     public function submit(Request $request, CadComplianceService $service)
@@ -81,7 +81,7 @@ class CadComplianceController extends Controller
                 'cad_submission_id' => $submission->id,
                 'entity_handle' => (string)($f['handle'] ?? ''),
                 'entity_type'   => (string)($f['type'] ?? ''),
-                'layer'         => $f['layer'] ?? null,
+                'layer'         => $f['layer'] ?? $f['raw_layer'] ?? $f['original_layer_name'] ?? $f['standard_layer'] ?? null,
                 'is_closed'     => (bool)($f['is_closed'] ?? false),
                 'num_vertices'  => (int)($f['num_vertices'] ?? 0),
                 'area'          => $f['area'] ?? null,
@@ -107,6 +107,9 @@ class CadComplianceController extends Controller
             'submission' => $submission,
             'results_system'    => $resultsSystem,
             'results_expert'    => $resultsExpert,
+            'semanticReport' => null,
+            'semanticRuleRows' => [],
+            'semanticDrawing' => null,
             'errorMessage' => null,
         ]);
     }
@@ -116,11 +119,15 @@ class CadComplianceController extends Controller
         $submission = CadSubmission::findOrFail($id);
         $resultsSystem = $this->loadResults($submission, 'system');
         $resultsExpert = $this->loadResults($submission, 'expert');
+        [$semanticDrawing, $semanticReport, $semanticRuleRows] = $this->loadSemanticReportData($submission->id);
 
         return view('admin.plans.cad_compliance', [
             'submission' => $submission,
             'results_system'    => $resultsSystem,
             'results_expert'    => $resultsExpert,
+            'semanticReport' => $semanticReport,
+            'semanticRuleRows' => $semanticRuleRows,
+            'semanticDrawing' => $semanticDrawing,
             'errorMessage' => null,
         ]);
     }
@@ -148,6 +155,9 @@ class CadComplianceController extends Controller
                 'submission' => $submission,
                 'results_system'    => $resultsSystem,
                 'results_expert'    => $resultsExpert,
+                'semanticReport' => null,
+                'semanticRuleRows' => [],
+                'semanticDrawing' => null,
                 'errorMessage' => $e->getMessage(),
             ]);
         }
@@ -157,6 +167,33 @@ class CadComplianceController extends Controller
         return redirect()
             ->route('admin.plan.cad-compliance.show', ['id' => $submission->id])
             ->with('status', 'Expert results saved.');
+    }
+
+    public function runSemanticPipeline(
+        $id,
+        MapApprovalPipelineService $pipelineService,
+        GeometryCalculationService $geometryService,
+        RuleValidationService $ruleValidationService,
+        MapApprovalReportService $reportService
+    ) {
+        $submission = CadSubmission::findOrFail($id);
+        $run = $pipelineService->mapExistingCadSubmission($submission);
+        $drawing = $run['drawing']->fresh('entities');
+        $summary = $run['mapping_summary'];
+
+        $statusMessage = 'Semantic mapping completed.';
+        if (empty($summary['blocking_issues'])) {
+            $geometry = $geometryService->calculate($drawing);
+            $ruleValidationService->validate($drawing->fresh('entities'), $geometry);
+            $report = $reportService->generate($drawing->fresh(['entities', 'geometryResults', 'ruleResults']));
+            $statusMessage = 'Semantic mapping and validation completed. Final status: ' . ($report['status'] ?? 'needs_expert_review');
+        } else {
+            $statusMessage = 'Semantic mapping completed, but expert review is required before validation.';
+        }
+
+        return redirect()
+            ->route('admin.plan.cad-compliance.show', ['id' => $submission->id])
+            ->with('status', $statusMessage);
     }
 
     private function persistRuleResults(CadSubmission $submission, array $run, string $source): void
@@ -210,6 +247,27 @@ class CadComplianceController extends Controller
         }
 
         return $query->get();
+    }
+
+    private function loadSemanticReportData(int $submissionId): array
+    {
+        $drawing = MapDrawing::query()
+            ->orderByDesc('id')
+            ->get()
+            ->first(function (MapDrawing $row) use ($submissionId) {
+                $mappedId = data_get($row->metadata_json, 'cad_submission_id');
+                return (string) $mappedId === (string) $submissionId;
+            });
+
+        if (! $drawing) {
+            return [null, null, []];
+        }
+
+        $reportService = app(MapApprovalReportService::class);
+        $report = $reportService->generate($drawing->fresh(['entities', 'geometryResults', 'ruleResults']));
+        $rules = $report['rules'] ?? [];
+
+        return [$drawing, $report, $rules];
     }
 
     /**

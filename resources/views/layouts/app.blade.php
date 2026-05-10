@@ -129,7 +129,24 @@
                         Setback Checker
                     </a>
                 </li>
-                {{-- Add more nav items later if needed --}}
+                <li class="nav-item">
+                    <a class="nav-link {{ request()->is('admin/plan/cad-compliance*') ? 'active' : '' }}"
+                       href="{{ url('/admin/plan/cad-compliance') }}">
+                        CAD Compliance
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {{ request()->is('admin/plan/approval-wizard*') ? 'active' : '' }}"
+                       href="{{ url('/admin/plan/approval-wizard') }}">
+                        CAD Approval Wizard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {{ request()->is('admin/plan/building-plan-applications*') ? 'active' : '' }}"
+                       href="{{ route('admin.plan.bp.index') }}">
+                        Building Plan AI
+                    </a>
+                </li>
             </ul>
         </div>
     </div>
