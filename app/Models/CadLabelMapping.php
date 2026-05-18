@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\LayerAliasService;
 use Illuminate\Database\Eloquent\Model;
 
 class CadLabelMapping extends Model
@@ -21,6 +22,24 @@ class CadLabelMapping extends Model
         'confidence' => 'float',
         'user_confirmed' => 'boolean',
     ];
+
+
+
+    protected static function booted(): void
+    {
+        static::created(function (CadLabelMapping $mapping): void {
+            if (! $mapping->user_confirmed) {
+                return;
+            }
+
+            try {
+                $entity = $mapping->entity;
+                app(LayerAliasService::class)->learnFromEntityMapping($entity, (string) $mapping->label_key, (string) ($mapping->source ?: 'expert_mapping'));
+            } catch (\Throwable $e) {
+                // keep mapping flow stable
+            }
+        });
+    }
 
     public function submission()
     {

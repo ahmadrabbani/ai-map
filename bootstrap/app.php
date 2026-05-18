@@ -14,6 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'ad.epermit' => \App\Http\Middleware\EnsureAdEpermitAccess::class,
+            'bp.applicant' => \App\Http\Middleware\EnsureApplicantAuthenticated::class,
+            'bp.applicant.guest' => \App\Http\Middleware\RedirectIfApplicantAuthenticated::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

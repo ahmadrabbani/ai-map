@@ -2,9 +2,12 @@
 
 namespace App\Services\MapApproval;
 
+use App\Services\LayerAliasService;
+
 class DxfEntityExtractionService
 {
     private ?array $allowedLayerLookup = null;
+    private ?array $aliasLookup = null;
 
     public function extract(string $dxfAbsPath): array
     {
@@ -148,6 +151,11 @@ class DxfEntityExtractionService
             return $lookup[$normalized];
         }
 
+        $aliased = $this->resolveByAlias($normalized);
+        if ($aliased !== null) {
+            return $aliased;
+        }
+
         foreach ($lookup as $allowedNormalized => $officialLayer) {
             if ($allowedNormalized === '0') {
                 continue;
@@ -187,6 +195,42 @@ class DxfEntityExtractionService
         return $this->allowedLayerLookup = $lookup;
     }
 
+
+
+    private function resolveByAlias(string $normalizedLayer): ?string
+    {
+        $aliases = $this->aliasLookup();
+        if (empty($aliases)) {
+            return null;
+        }
+
+        return $aliases[$normalizedLayer] ?? null;
+    }
+
+    private function aliasLookup(): array
+    {
+        if ($this->aliasLookup !== null) {
+            return $this->aliasLookup;
+        }
+
+        try {
+            $svc = app(LayerAliasService::class);
+            $rows = \App\Models\LayerAlias::query()->where('is_active', true)->get(['alias_name_normalized', 'official_layer_name'])->all();
+            $lookup = [];
+            foreach ($rows as $row) {
+                $norm = (string) ($row->alias_name_normalized ?? '');
+                $off = (string) ($row->official_layer_name ?? '');
+                if ($norm !== '' && $off !== '') {
+                    $lookup[$svc->normalize($norm)] = $off;
+                    $lookup[$norm] = $off;
+                }
+            }
+            return $this->aliasLookup = $lookup;
+        } catch (\Throwable $e) {
+            return $this->aliasLookup = [];
+        }
+    }
+
     private function normalizeLayerName(string $layerName): string
     {
         $value = preg_replace('/[\x00-\x1F\x7F-\x9F]/u', '', $layerName);
@@ -220,9 +264,12 @@ class DxfEntityExtractionService
             'applicant information',
             'plot information',
             'measurements',
+            'measurement information',
             'submission details',
+            'submission information',
             'measurement text',
             'text general',
+            'dimension',
             'dimensions',
         ], true);
     }

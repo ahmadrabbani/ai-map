@@ -4280,19 +4280,37 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
             {(expertReport?.missing_required_labels || []).length ? (
               <ul style={{ margin: 0, paddingLeft: 16 }}>
                 {(expertReport?.missing_required_label_details || []).map((row, idx) => (
-                  <li key={`${row.label_key}-${idx}`} className="muted">{row.label_name} is required but missing.</li>
+                  <li key={`${row.label_key}-${idx}`} className="muted">{row.label_name} needs layer mapping, textual evidence, or officer marking.</li>
                 ))}
               </ul>
             ) : (
-              <div className="muted">No missing required labels.</div>
+              <div style={{ color: "#0f6b5f", fontWeight: 600 }}>
+                No blocking missing labels. Matched layer/text evidence is available for preliminary review.
+              </div>
             )}
           </div>
 
           <div className="card" style={{ border: "1px solid #eee", borderRadius: 10, padding: 10, marginBottom: 10 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>What to do next</div>
-            <div className="muted">
-              1) Confirm Plot Boundary first (closed polygon). 2) Map External Walls (multiple entities). 3) Confirm Front/Side/Rear building lines. 4) Confirm Dimensions and Text.
-            </div>
+            {expertReport?.approval_readiness?.status === "preliminary_clear" || expertReport?.approval_readiness?.status === "layer_text_available" ? (
+              <div style={{ color: "#0f6b5f", fontWeight: 600 }}>
+                Layer mapping and textual measurements are available. Review the report, answer applicant chat if needed, then continue AD ePermit decision flow.
+              </div>
+            ) : (
+              <div className="muted">
+                Resolve only the listed missing items. If the official text table already contains the value, regenerate the mapping report so it can be used as textual evidence.
+              </div>
+            )}
+            {(expertReport?.approval_readiness?.messages || []).length ? (
+              <div style={{ marginTop: 8, borderTop: "1px dashed #eee", paddingTop: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>Preliminary approval evidence</div>
+                {expertReport.approval_readiness.messages.map((message, idx) => (
+                  <div key={`ready-${idx}`} className="muted" style={{ marginBottom: 4 }}>
+                    {message}
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {(expertReport?.text_reference_hints || []).length ? (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>CAD text references detected</div>

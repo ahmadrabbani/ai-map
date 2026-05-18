@@ -13,6 +13,8 @@ class AiReportGenerationService
         $ai = (array) ($analysis['analysis_json'] ?? []);
         $mapReport = (array) data_get($ai, 'map_report', []);
         $cadAnalysis = (array) data_get($ai, 'analysis_result', []);
+        $structural = (array) data_get($ai, 'structural_extraction', []);
+        $imagerySignal = (array) data_get($ai, 'imagery_signal', []);
 
         $rules = array_values(array_filter(array_merge(
             (array) data_get($ai, 'rules', []),
@@ -84,6 +86,14 @@ class AiReportGenerationService
             'ai_confidence_score' => $analysis['confidence_score'] ?? 0,
             'ai_recommendation' => $analysis['recommendation'] ?? 'Needs Expert Review',
             'chatbot_conversation_summary' => $chatSummary,
+            'imagery_signal' => $imagerySignal,
+            'structural_findings' => [
+                'summary' => (array) data_get($structural, 'summary', []),
+                'confidence' => (float) data_get($structural, 'confidence', 0),
+                'entities' => (array) data_get($structural, 'entities', []),
+                'graph' => (array) data_get($structural, 'graph', []),
+                'notes' => (array) data_get($structural, 'notes', []),
+            ],
             'disclaimer' => self::DISCLAIMER,
         ];
 

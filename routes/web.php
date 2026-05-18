@@ -15,7 +15,11 @@ use App\Http\Controllers\BuildingPlanApplicationController;
 use App\Http\Controllers\BuildingPlanAiReportController;
 use App\Http\Controllers\BuildingPlanChatController;
 use App\Http\Controllers\AdEpermitReviewController;
+use App\Http\Controllers\AdEpermitAuthController;
 use App\Http\Controllers\DdtpReviewController;
+use App\Http\Controllers\PublicApplicantAuthController;
+use App\Http\Controllers\PublicBuildingPlanPortalController;
+use App\Http\Controllers\PublicBuildingPlanChatController;
 
 Route::get('/admin/plan/check-setback', [PlanCheckController::class, 'showForm'])
     ->name('admin.plan.check-setback.form');
@@ -178,6 +182,15 @@ Route::get('/admin/plan/building-plan-verification/{token}', [BuildingPlanAiRepo
 
 Route::post('/admin/plan/building-plan-applications/{application}/chat', [BuildingPlanChatController::class, 'store'])
     ->name('admin.plan.bp.chat.store');
+Route::get('/admin/plan/building-plan-applications/{application}/chat', [BuildingPlanChatController::class, 'index'])
+    ->name('admin.plan.bp.chat.index');
+
+Route::get('/admin/plan/ad-epermit/login', [AdEpermitAuthController::class, 'showLogin'])
+    ->name('admin.plan.bp.ad.login');
+Route::post('/admin/plan/ad-epermit/login', [AdEpermitAuthController::class, 'login'])
+    ->name('admin.plan.bp.ad.login.store');
+Route::post('/admin/plan/ad-epermit/logout', [AdEpermitAuthController::class, 'logout'])
+    ->name('admin.plan.bp.ad.logout');
 
 Route::middleware('ad.epermit')->group(function () {
     Route::get('/admin/plan/ad-epermit', [AdEpermitReviewController::class, 'index'])
@@ -186,6 +199,14 @@ Route::middleware('ad.epermit')->group(function () {
         ->name('admin.plan.bp.ad.show');
     Route::post('/admin/plan/ad-epermit/{application}', [AdEpermitReviewController::class, 'update'])
         ->name('admin.plan.bp.ad.update');
+    Route::post('/admin/plan/ad-epermit/{application}/generate-cad-analysis', [AdEpermitReviewController::class, 'generateCadAnalysis'])
+        ->name('admin.plan.bp.ad.generate-cad-analysis');
+    Route::post('/admin/plan/ad-epermit/{application}/imagery-label', [AdEpermitReviewController::class, 'saveImageryLabel'])
+        ->name('admin.plan.bp.ad.imagery-label');
+    Route::post('/admin/plan/ad-epermit/{application}/site-review', [AdEpermitReviewController::class, 'saveSiteReview'])
+        ->name('admin.plan.bp.ad.site-review');
+    Route::post('/admin/plan/ad-epermit/{application}/push-dfps', [AdEpermitReviewController::class, 'pushToDfps'])
+        ->name('admin.plan.bp.ad.push-dfps');
 });
 
 Route::get('/admin/plan/ddtp', [DdtpReviewController::class, 'index'])
@@ -194,3 +215,46 @@ Route::get('/admin/plan/ddtp/{application}', [DdtpReviewController::class, 'show
     ->name('admin.plan.bp.ddtp.show');
 Route::post('/admin/plan/ddtp/{application}', [DdtpReviewController::class, 'update'])
     ->name('admin.plan.bp.ddtp.update');
+
+/*
+|--------------------------------------------------------------------------
+| Public Applicant Portal - Building Plan AI
+|--------------------------------------------------------------------------
+*/
+Route::middleware('bp.applicant.guest')->group(function () {
+    Route::get('/building-plan-ai/login', [PublicApplicantAuthController::class, 'showLogin'])
+        ->name('public.bp.login');
+    Route::post('/building-plan-ai/login', [PublicApplicantAuthController::class, 'login'])
+        ->name('public.bp.login.store');
+    Route::get('/building-plan-ai/register', [PublicApplicantAuthController::class, 'showRegister'])
+        ->name('public.bp.register');
+    Route::post('/building-plan-ai/register', [PublicApplicantAuthController::class, 'register'])
+        ->name('public.bp.register.store');
+});
+Route::post('/building-plan-ai/logout', [PublicApplicantAuthController::class, 'logout'])
+    ->name('public.bp.logout');
+
+Route::middleware('bp.applicant')->group(function () {
+    Route::get('/building-plan-ai/dashboard', [PublicBuildingPlanPortalController::class, 'dashboard'])
+        ->name('public.bp.dashboard');
+    Route::get('/building-plan-ai/applications/create', [PublicBuildingPlanPortalController::class, 'create'])
+        ->name('public.bp.applications.create');
+    Route::post('/building-plan-ai/applications/store', [PublicBuildingPlanPortalController::class, 'store'])
+        ->name('public.bp.applications.store');
+    Route::get('/building-plan-ai/applications/{id}', [PublicBuildingPlanPortalController::class, 'show'])
+        ->name('public.bp.applications.show');
+    Route::get('/building-plan-ai/applications/{id}/edit', [PublicBuildingPlanPortalController::class, 'edit'])
+        ->name('public.bp.applications.edit');
+    Route::get('/building-plan-ai/applications/{id}/report', [PublicBuildingPlanPortalController::class, 'report'])
+        ->name('public.bp.applications.report');
+    Route::get('/building-plan-ai/applications/{id}/download-report', [PublicBuildingPlanPortalController::class, 'downloadReport'])
+        ->name('public.bp.applications.download-report');
+    Route::get('/building-plan-ai/applications/{id}/documents/{documentId}', [PublicBuildingPlanPortalController::class, 'document'])
+        ->name('public.bp.applications.document');
+    Route::get('/building-plan-ai/applications/{id}/plan-pdf', [PublicBuildingPlanPortalController::class, 'planPdf'])
+        ->name('public.bp.applications.plan-pdf');
+    Route::get('/building-plan-ai/applications/{id}/chat', [PublicBuildingPlanChatController::class, 'index'])
+        ->name('public.bp.applications.chat.index');
+    Route::post('/building-plan-ai/applications/{id}/chat', [PublicBuildingPlanChatController::class, 'store'])
+        ->name('public.bp.applications.chat.store');
+});

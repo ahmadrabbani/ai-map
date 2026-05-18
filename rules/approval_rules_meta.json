@@ -1,359 +1,1429 @@
 {
-    "ruleset": "residential_building_approval",
-    "building_type": "residential",
-    "source_documents": [
+  "ruleset": "residential_building_approval",
+  "building_type": "residential",
+  "source_documents": [
+    "E:/LDA/LDA 2/AI Based BPAP/Rabbani Sb/09.02.2026 Amended Building Regulations-2019 (with amendment ).pdf",
+    "E:/LDA/LDA 2/AI Based BPAP/Rabbani Sb/Final 09.05.2026/Rulebook.txt"
+  ],
+  "plot_size_categories": {
+    "5_marla": {
+      "label": "5 Marla",
+      "basement_required": false,
+      "ground_floor_rules": [
         {
-            "id": "lda_bzr_2019",
-            "title": "LDA Building and Zoning Regulations 2019 (Amended 2020)",
-            "kind": "local_regulation",
-            "status": "primary"
+          "id": "SETBACK_FRONT",
+          "type": "setback",
+          "title": "Front setback requirement",
+          "value_ft": 5,
+          "operator": ">=",
+          "description": "Front setback as per approved scheme."
         },
         {
-            "id": "pec_fire_2016",
-            "title": "Pakistan Engineering Council Fire Safety Provisions 2016",
-            "kind": "national_code",
-            "status": "referenced"
+          "id": "SETBACK_REAR",
+          "type": "setback",
+          "title": "Rear setback requirement",
+          "value_ft": 5,
+          "operator": ">=",
+          "description": "Rear setback as per approved scheme."
+        },
+        {
+          "id": "SETBACK_SIDE",
+          "type": "setback",
+          "title": "Side setback requirement",
+          "value_ft": 0,
+          "operator": "==",
+          "description": "Side setback requirement as per approved scheme."
+        },
+        {
+          "id": "GROUND_COVERAGE",
+          "type": "coverage",
+          "title": "Maximum ground coverage",
+          "value_percent": 75,
+          "operator": "<=",
+          "description": "Maximum ground coverage limit."
+        },
+        {
+          "id": "FAR_LIMIT",
+          "type": "far",
+          "title": "Maximum Floor Area Ratio",
+          "value": 2.3,
+          "operator": "<=",
+          "description": "Maximum FAR limit."
+        },
+        {
+          "id": "MAX_STOREYS",
+          "type": "storeys",
+          "title": "Maximum number of storeys",
+          "value": 3,
+          "operator": "<=",
+          "description": "Maximum storeys allowed."
+        },
+        {
+          "id": "MAX_HEIGHT",
+          "type": "height",
+          "title": "Maximum building height",
+          "value_ft": 38,
+          "operator": "<=",
+          "description": "Maximum height limit."
+        },
+        {
+          "id": "PORCH_LENGTH",
+          "type": "porch",
+          "title": "Maximum porch length",
+          "value_ft": 20,
+          "operator": "<=",
+          "description": "Maximum porch length allowed."
+        },
+        {
+          "id": "REAR_TOILET_AREA",
+          "type": "ancillary",
+          "title": "Rear toilet maximum area",
+          "value_sqft": 40,
+          "operator": "<=",
+          "description": "Rear toilet area limit."
+        },
+        {
+          "id": "REAR_TOILET_HEIGHT",
+          "type": "ancillary",
+          "title": "Rear toilet maximum height",
+          "value_ft": 8,
+          "operator": "<=",
+          "description": "Rear toilet height limit."
         }
-    ],
-    "applicability_scope": {
-        "applicable_to_all_plot_sizes": true,
-        "applicable_to_every_floor": true,
-        "evaluation_model": "conditional_activation",
-        "precedence_order": [
-            "special_area_overlay",
-            "express_local_clause",
-            "external_code_hook",
-            "base_rule_default"
-        ],
-        "note": "The engine can evaluate every plot and every floor, but each rule activates only when its own conditions are met."
+      ]
     },
-    "canonical_units": {
-        "length": "ft",
-        "area": "sqft",
-        "ratio": "far",
-        "capacity": "gallon"
+    "10_marla": {
+      "label": "10 Marla",
+      "basement_required": false
     },
-    "definitions": [
-        {
-            "term": "building_height",
-            "meaning": "Height from crown of road to top of parapet wall.",
-            "source_ref": "Clause 1.1 / supplied PDF p.3"
-        },
-        {
-            "term": "far",
-            "meaning": "Aggregate covered area divided by total plot area.",
-            "source_ref": "Clause 1.1 / supplied PDF p.5"
-        },
-        {
-            "term": "ground_coverage",
-            "meaning": "Ground floor covered area as a percentage of total plot area.",
-            "source_ref": "Residential controls / supplied PDF pp.13-14"
-        }
-    ],
-    "rule_types": [
-        "setback",
-        "coverage",
-        "far",
-        "height_limit",
-        "storeys",
-        "submission",
-        "sanitation",
-        "fire_safety",
-        "vertical_circulation"
-    ],
-    "plot_size_categories": {
-        "5_marla": {
-            "label": "5 Marla",
-            "basement_required": false,
-            "ground_floor_rules": [
-                {
-                    "id": "SETBACK_FRONT",
-                    "type": "setback",
-                    "title": "Front setback requirement",
-                    "value_ft": 5,
-                    "operator": "<=",
-                    "description": "Maximum 5 ft front setback for 5 Marla in approved schemes."
-                },
-                {
-                    "id": "SETBACK_REAR",
-                    "type": "setback",
-                    "title": "Rear setback requirement",
-                    "value_ft": 5,
-                    "operator": "<=",
-                    "description": "Maximum 5 ft rear setback for 5 Marla residential plots."
-                },
-                {
-                    "id": "SETBACK_SIDE",
-                    "type": "setback",
-                    "title": "Side setback requirement",
-                    "value_ft": 0,
-                    "operator": "==",
-                    "description": "No side setback required for 5 Marla plots in approved schemes."
-                },
-                {
-                    "id": "GROUND_COVERAGE",
-                    "type": "coverage",
-                    "title": "Maximum ground coverage",
-                    "value_percent": 75,
-                    "operator": "<=",
-                    "description": "Ground floor may cover maximum 75% of plot area."
-                },
-                {
-                    "id": "FAR_LIMIT",
-                    "type": "far",
-                    "title": "Maximum Floor Area Ratio",
-                    "value": 2.3,
-                    "operator": "<=",
-                    "description": "Total covered area of all floors shall not exceed FAR 1:2.3."
-                },
-                {
-                    "id": "MAX_STOREYS",
-                    "type": "storeys",
-                    "title": "Maximum number of storeys",
-                    "value": 3,
-                    "operator": "<=",
-                    "description": "Maximum of Ground + First + Second storey allowed."
-                },
-                {
-                    "id": "MAX_HEIGHT",
-                    "type": "height",
-                    "title": "Maximum building height",
-                    "value_ft": 38,
-                    "operator": "<=",
-                    "description": "Total height of building shall not exceed 38 ft."
-                },
-                {
-                    "id": "STOREY_CLEAR_HEIGHT",
-                    "type": "storey_height",
-                    "title": "Minimum clear height per storey",
-                    "value_ft": 9.5,
-                    "operator": ">=",
-                    "description": "Each storey (except basement) must have minimum 9 ft 6 in clear height."
-                },
-                {
-                    "id": "PORCH_LENGTH",
-                    "type": "porch",
-                    "title": "Maximum porch length",
-                    "value_ft": 20,
-                    "operator": "<=",
-                    "description": "Car porch length must not exceed 20 ft."
-                },
-                {
-                    "id": "PORCH_ROOM_NOT_ALLOWED",
-                    "type": "porch",
-                    "title": "Room above porch prohibition",
-                    "value": false,
-                    "operator": "==",
-                    "description": "Room above porch is not allowed because 5 ft side space does not exist."
-                },
-                {
-                    "id": "REAR_TOILET_AREA",
-                    "type": "ancillary",
-                    "title": "Rear toilet maximum area",
-                    "value_sqft": 40,
-                    "operator": "<=",
-                    "description": "Rear corner toilet/bath may not exceed 40 sq ft area."
-                },
-                {
-                    "id": "REAR_TOILET_HEIGHT",
-                    "type": "ancillary",
-                    "title": "Rear toilet maximum height",
-                    "value_ft": 8,
-                    "operator": "<=",
-                    "description": "Rear corner toilet/bath height may not exceed 8 ft."
-                }
-            ]
-        },
-        "10_marla": {
-            "label": "10 Marla",
-            "basement_required": false
-        },
-        "above_10_marla": {
-            "label": "Above 10 Marla",
-            "basement_required": true
-        },
-        "custom": {
-            "label": "Custom",
-            "basement_required_when_area_gt_sqft": 2250
-        }
+    "above_10_marla": {
+      "label": "Above 10 Marla",
+      "basement_required": true
     },
-    "required_plans": {
-        "ground": {
-            "required": true,
-            "label": "Ground Floor Plan"
-        },
-        "basement": {
-            "required": false,
-            "required_when": {
-                "plot_size_category": "above_10_marla"
-            },
-            "label": "Basement Plan"
-        },
-        "first": {
-            "required": false,
-            "label": "First Floor Plan"
-        },
-        "second": {
-            "required": false,
-            "label": "Second Floor Plan"
-        },
-        "roof": {
-            "required": false,
-            "label": "Roof Plan"
-        },
-        "services": {
-            "required": false,
-            "label": "Services Plan"
-        }
+    "custom": {
+      "label": "Custom",
+      "basement_required_when_area_gt_sqft": 2250
+    }
+  },
+  "required_plans": {
+    "ground": {
+      "required": true,
+      "label": "Ground Floor Plan"
     },
-    "final_report": {
-        "generate_even_if_expert_review_required": true,
-        "allow_submit_when_status": ["ready_for_submission"]
+    "basement": {
+      "required": false,
+      "required_when": {
+        "plot_size_category": "above_10_marla"
+      },
+      "label": "Basement Plan"
     },
-    "required_documents": [
-        {
-            "id": "document.water_supply_sewerage_drainage_plan",
-            "label": "Water supply, sewerage, and drainage plan"
-        },
-        {
-            "id": "document.structural_drawings",
-            "label": "Structural drawings"
-        },
-        {
-            "id": "document.electricity_safety_plan",
-            "label": "Electricity safety plan"
-        },
-        {
-            "id": "document.fire_safety_plan",
-            "label": "Fire safety plan"
-        }
-    ],
-    "evaluation_flow": [
-        "Normalise units for plot and floor data.",
-        "Derive context such as plot band, FAR, coverage, storeys, floor roles, and use mix.",
-        "Select active rules through conditional activation.",
-        "Resolve precedence using overlays, local clauses, external hooks, then defaults.",
-        "Evaluate plot-wide metrics before floor-level checks.",
-        "Emit pass, warn, or fail with clause references and measured values."
-    ],
-    "comparison_matrix": [
-        {
-            "plot_bucket": "small",
-            "ground_floor": "Tight envelope with highest coverage bands and earliest height limits.",
-            "mid_floors": "Checks focus on clear height, stairs, and room/layout predicates.",
-            "upper_floors": "Overall caps on storeys and height dominate compliance."
-        },
-        {
-            "plot_bucket": "medium",
-            "ground_floor": "Setbacks widen and ground coverage drops compared with small plots.",
-            "mid_floors": "Parking, lift, disabled-access, and fire checks activate more often.",
-            "upper_floors": "Emergency stairs, hydrants, and stability submissions become important."
-        },
-        {
-            "plot_bucket": "large",
-            "ground_floor": "Largest setbacks and lowest residential coverage percentages apply.",
-            "mid_floors": "Multi-storey fire, lift, and service-floor compliance dominate review.",
-            "upper_floors": "High-rise pathways require local zoning plus external-code hooks."
-        }
-    ],
-    "implementation_assumptions": [
-        "Applicable to all plot sizes and floors means evaluable for all, not that every clause always applies.",
-        "Mixed-use proposals should be decomposed into separate use components and then recombined.",
-        "Where the regulation delegates to other codes, the engine should emit external-code tasks instead of inventing local numeric limits.",
-        "Special-area overlays should be supported as separate rule packs."
-    ],
-    "normalized_rules": [
-        {
-            "id": "R1_RESIDENTIAL_APPROVED_SCHEME_ENVELOPE",
-            "title": "Approved-scheme residential storeys, coverage, height and FAR by plot size",
-            "rule_type": "height_limit",
-            "scope": "building",
-            "applicability": {
-                "zones": ["residential"],
-                "subzones": ["approved_scheme"],
-                "floor_selector": {
-                    "type": "all"
-                }
-            },
-            "evaluation": {
-                "mode": "band_lookup",
-                "result_fields": [
-                    "max_storeys_excluding_basement",
-                    "max_ground_coverage_percent",
-                    "max_height_ft",
-                    "max_far"
-                ],
-                "bands": [
-                    {
-                        "when": {
-                            "all_of": [
-                                {"subject": "plot_area_sqft", "operator": "<", "value": 1125}
-                            ]
-                        },
-                        "requirements": [
-                            {"subject": "max_storeys_excluding_basement", "operator": "=", "value": 3},
-                            {"subject": "max_ground_coverage_percent", "operator": "=", "value": 80},
-                            {"subject": "max_height_ft", "operator": "=", "value": 38, "unit": "ft"},
-                            {"subject": "max_far", "operator": "=", "value": 2.4, "unit": "far"}
-                        ]
-                    },
-                    {
-                        "when": {
-                            "all_of": [
-                                {"subject": "plot_area_sqft", "operator": ">=", "value": 1125},
-                                {"subject": "plot_area_sqft", "operator": "<", "value": 2250}
-                            ]
-                        },
-                        "requirements": [
-                            {"subject": "max_storeys_excluding_basement", "operator": "=", "value": 3},
-                            {"subject": "max_ground_coverage_percent", "operator": "=", "value": 75},
-                            {"subject": "max_height_ft", "operator": "=", "value": 38, "unit": "ft"},
-                            {"subject": "max_far", "operator": "=", "value": 2.3, "unit": "far"}
-                        ]
-                    },
-                    {
-                        "when": {
-                            "all_of": [
-                                {"subject": "plot_area_sqft", "operator": ">=", "value": 2250},
-                                {"subject": "plot_area_sqft", "operator": "<", "value": 9000}
-                            ]
-                        },
-                        "requirements": [
-                            {"subject": "max_storeys_excluding_basement", "operator": "=", "value": 4},
-                            {"subject": "max_ground_coverage_percent", "operator": "=", "value": "70_to_60_by_band"},
-                            {"subject": "max_height_ft", "operator": "=", "value": 45, "unit": "ft"},
-                            {"subject": "max_far", "operator": "=", "value": "2.8_to_2.4_by_band", "unit": "far"}
-                        ]
-                    }
-                ]
-            },
-            "source_refs": [
-                "Clauses 2.2.2-2.2.3 / supplied PDF pp.13-14"
-            ]
-        },
-        {
-            "id": "R2_SUBMISSION_PACKAGE",
-            "title": "Mandatory submission package for approval",
-            "rule_type": "submission",
-            "scope": "building",
-            "applicability": {
-                "zones": ["residential", "commercial", "industrial", "public", "mixed_use"],
-                "floor_selector": {
-                    "type": "all"
-                }
-            },
-            "evaluation": {
-                "mode": "document_requirement",
-                "requirements": [
-                    {"subject": "document.water_supply_sewerage_drainage_plan", "operator": "exists", "value": true},
-                    {"subject": "document.structural_drawings", "operator": "exists", "value": true},
-                    {"subject": "document.electricity_safety_plan", "operator": "exists", "value": true},
-                    {"subject": "document.fire_safety_plan", "operator": "exists", "value": true}
-                ]
-            },
-            "source_refs": [
-                "Clause 7.1 / supplied PDF p.51"
-            ]
-        }
+    "first": {
+      "required": false,
+      "label": "First Floor Plan"
+    },
+    "second": {
+      "required": false,
+      "label": "Second Floor Plan"
+    },
+    "roof": {
+      "required": false,
+      "label": "Roof Plan"
+    },
+    "services": {
+      "required": false,
+      "label": "Services Plan"
+    }
+  },
+  "final_report": {
+    "generate_even_if_expert_review_required": true,
+    "allow_submit_when_status": [
+      "ready_for_submission"
     ]
+  },
+  "required_documents": [
+    {
+      "id": "document.water_supply_sewerage_drainage_plan",
+      "label": "Water supply, sewerage, and drainage plan"
+    },
+    {
+      "id": "document.structural_drawings",
+      "label": "Structural drawings"
+    },
+    {
+      "id": "document.electricity_safety_plan",
+      "label": "Electricity safety plan"
+    },
+    {
+      "id": "document.fire_safety_plan",
+      "label": "Fire safety plan"
+    }
+  ],
+  "source_rulebook_snapshot": {
+    "metadata": {
+      "title": "LDA AI-Based Residential House Building Plan Approval JSON Rulebook",
+      "version": "3.0-2026-residential-house-dwg-42-layer",
+      "prepared_for": "Lahore Development Authority (LDA)",
+      "system_name": "LDA AI-Based Building Plan Approval System",
+      "prepared_date": "2026-05-14",
+      "scope": "Residential houses only: single-family houses, residential rebuilds, and residential additions/alterations.",
+      "excluded_from_this_module": [
+        "Apartment buildings",
+        "Multistorey buildings other than residential houses within Chapter 2 limits",
+        "Commercial buildings",
+        "Mixed-use buildings",
+        "Hostels",
+        "Guest houses",
+        "Marquees/marriage halls",
+        "Petrol/CNG stations",
+        "Public buildings",
+        "Industrial buildings"
+      ],
+      "source_files": [
+        "E:/LDA/LDA 2/AI Based BPAP/Rabbani Sb/09.02.2026 Amended Building Regulations-2019 (with amendment ).pdf",
+        "E:/LDA/LDA 2/AI Based BPAP/Rabbani Sb/Final 09.05.2026/Rulebook.txt"
+      ],
+      "limitation_notes": [
+        "Prior chat history and the shared ChatGPT link were not available as local source text; this JSON uses the uploaded PDF, existing Rulebook.txt, and explicit scrutiny requirements in this request.",
+        "Where user-stated LDA scrutiny practice is stricter than extracted PDF text, it is encoded as an LDA scrutiny/amendment policy check and should be verified by Regulations/Legal before production enforcement."
+      ],
+      "decision_outputs": [
+        "approval",
+        "conditional_approval",
+        "objection_letter",
+        "disapproval_letter",
+        "revision_required",
+        "manual_review_required"
+      ]
+    },
+    "regulatory_clause_library": {
+      "definitions": [
+        {
+          "clause_reference": "Chapter 1",
+          "clause_title": "Residential Building",
+          "clause_text": "Residential Building means a building exclusively designed to be used for human habitation together with such out houses as are ordinarily ancillary to the main building and used in connection therewith."
+        },
+        {
+          "clause_reference": "Chapter 1",
+          "clause_title": "Porch",
+          "clause_text": "Porch means a roof cover supported on pillars or cantilevered projection for the purpose of pedestrian or vehicular approach to a building."
+        },
+        {
+          "clause_reference": "Chapter 1",
+          "clause_title": "Mandatory Open Spaces",
+          "clause_text": "Mandatory Open Spaces means the spaces required by these Regulations to be left open at ground level around the building."
+        },
+        {
+          "clause_reference": "Chapter 1",
+          "clause_title": "Right of Way",
+          "clause_text": "Right of way means width of road/street between two opposite property lines."
+        }
+      ],
+      "chapter_2_residential_site_requirements": [
+        {
+          "clause_reference": "2.1.1(a)",
+          "clause_title": "Established built-up areas; roads up to 25 ft ROW",
+          "clause_text": "For a building abutting on roads having up to 25 ft right of way the building line shall be as established by existing buildings, while side and rear spaces are governed by the table at 2.1.1(b)."
+        },
+        {
+          "clause_reference": "2.1.1(b)",
+          "clause_title": "Established built-up mandatory open spaces",
+          "clause_text": "For buildings abutting roads having more than 25 ft right of way, mandatory open spaces are prescribed by plot size: less than 5 Marla front 5 ft, rear not required, side not required; 5 to under 10 Marla front 5 ft, rear 5 ft, side not required; 10 to 30 Marla front 10 ft, rear 7 ft, side 5 ft on one side; above 30 Marla to under 2 Kanal front 10 ft, rear 7 ft, side 5 ft both sides; 2 Kanal and above front 20 ft, rear 10 ft, side 10 ft both sides."
+        },
+        {
+          "clause_reference": "2.1.1(c)",
+          "clause_title": "Permissible unroofed items in mandatory spaces",
+          "clause_text": "Drain, sewer, septic tank, cess pool, filter, waste-liquid disposal structure, open garden tank or private swimming pool may be permissible in mandatory open spaces provided that no roofed building is attached."
+        },
+        {
+          "clause_reference": "2.1.2 / 2.2.2",
+          "clause_title": "Residential height and storey height",
+          "clause_text": "Residential buildings other than apartment buildings shall follow Clause 2.2.3 height/storey limits. Minimum clear height of each storey other than basement shall not be less than 9 ft 6 in."
+        },
+        {
+          "clause_reference": "2.1.3",
+          "clause_title": "Established built-up coverage/FAR",
+          "clause_text": "For ROW above 25 ft apply approved-scheme FAR and coverage. For ROW up to 25 ft: less than 5 Marla 85% and FAR 2.0; 5 to under 10 Marla 80% and FAR 1.6; 10 Marla to under 1 Kanal 70% and FAR 1.5; 1 Kanal to under 2 Kanal 65% and FAR 1.4; 2 Kanal and above 60% and FAR 1.3."
+        },
+        {
+          "clause_reference": "2.1.4",
+          "clause_title": "Porch",
+          "clause_text": "Car porch not exceeding 20 ft in length is permissible in side space. In corner plots car porch is permissible along longer side. Where minimum 5 ft side space is required, construction of a room over the car porch equal to its area is also permissible."
+        },
+        {
+          "clause_reference": "2.1.5",
+          "clause_title": "Toilet/Bathroom",
+          "clause_text": "A toilet/bathroom not exceeding 40 sq ft in area and 8 ft in height can be constructed in the rear corner towards the dead wall as an integral part of main building."
+        },
+        {
+          "clause_reference": "2.2.1",
+          "clause_title": "Approved schemes mandatory open spaces",
+          "clause_text": "Approved scheme table: less than 5 Marla front 5 ft, rear 5 ft, side not required; 5 to under 10 Marla front 5 ft, rear 5 ft, side not required; 10 to 30 Marla front 10 ft, rear 7 ft, side 5 ft one side; above 30 Marla to under 2 Kanal front 10 ft, rear 7 ft, side 5 ft both sides; 2 Kanal to under 4 Kanal front 20 ft, rear 10 ft, side 10 ft both sides; 4 Kanal and above front 20 ft, rear 13 ft, side 13 ft both sides."
+        },
+        {
+          "clause_reference": "2.2.3",
+          "clause_title": "Coverage, FAR, height, storeys and parking",
+          "clause_text": "Less than 5 Marla: 3 storeys, 80%, 38 ft, FAR 2.4. 5 to under 10 Marla: 3 storeys, 75%, 38 ft, FAR 2.3. 10 Marla to under 1 Kanal: 3 storeys, 70%, 45 ft, FAR 2.8. 1 Kanal to 30 Marla: 3 storeys, 65%, 45 ft, FAR 2.6. Above 30 Marla to under 2 Kanal: 3 storeys, 60%, 45 ft, FAR 2.4. 2 Kanal and above: 3 storeys, 55%, 45 ft, FAR 2.2. Basement is included in FAR. Structural stability certificate, structure drawings and calculations are required above 38 ft and must be vetted by Structural Engineer on LDA panel."
+        },
+        {
+          "clause_reference": "2.3.1",
+          "clause_title": "Predominantly open areas mandatory open spaces",
+          "clause_text": "Permissible building line shall be as provided in Clause 2.2.1. Other mandatory spaces by frontage: less than 30 ft rear 5 ft, side not required; 30 ft to 50 ft rear 5 ft, side 5 ft both sides; above 50 ft to 70 ft rear 10 ft, side 5 ft both sides; above 70 ft rear 10 ft, side 10 ft both sides."
+        },
+        {
+          "clause_reference": "2.4",
+          "clause_title": "Professional activities in residential units",
+          "clause_text": "A part not exceeding 25% of floor area of a residential building may be used, subject to formal competent-authority permission, as an office associated with the resident professional, subject to qualification, registration, and ownership/NOC requirements."
+        },
+        {
+          "clause_reference": "2.7(i)",
+          "clause_title": "Pillar construction",
+          "clause_text": "No pillar construction is allowed for residential building/house/farm house; concealed column for strengthening may be allowed keeping in view bearing capacity of soil."
+        },
+        {
+          "clause_reference": "2.7(ii)",
+          "clause_title": "Billboards/hoardings",
+          "clause_text": "No billboard and hoardings shall be allowed on residential plots."
+        },
+        {
+          "clause_reference": "2.7(iii)",
+          "clause_title": "Basement separate plan on 60 ft and above ROW",
+          "clause_text": "Plots abutting on 60 ft and above right of way require separate plans for basement to be submitted and sanctioned."
+        },
+        {
+          "clause_reference": "2.7(vi), 10.8.8",
+          "clause_title": "Rainwater",
+          "clause_text": "Rainwater invert well/tank provision is required for houses above 5 Marla, and adequate grating shall be provided within plot line to prevent rainwater from flowing onto the road."
+        },
+        {
+          "clause_reference": "2.7(vii)",
+          "clause_title": "Water tanks",
+          "clause_text": "Underground and overhead water tanks are required for residential buildings having area of 3 Marla and above."
+        },
+        {
+          "clause_reference": "2.7.1(a)-(b)",
+          "clause_title": "Storeys and mandatory space violations",
+          "clause_text": "No building plan shall be approved more than 3 storeys. Violations in mandatory spaces are non-compoundable. Removal of partition walls without LDA approval may result in plan cancellation/revocation."
+        }
+      ],
+      "chapter_5_internal_space_and_ventilation": [
+        {
+          "clause_reference": "5.2.1",
+          "clause_title": "Basement",
+          "clause_text": "Basement minimum room height shall be 8 ft. Residential/commercial basement minimum area shall be 100 sq ft and shall be constructed after leaving required mandatory open spaces. Foundations shall not intrude into adjoining properties."
+        },
+        {
+          "clause_reference": "5.2.2(a)(i)",
+          "clause_title": "Minimum habitable room size",
+          "clause_text": "Minimum area of a room meant for human habitation shall be 100 sq ft with minimum width of 8 ft."
+        },
+        {
+          "clause_reference": "5.2.2(a)(ii)",
+          "clause_title": "Minimum kitchen size",
+          "clause_text": "Minimum floor area of a kitchen shall be 50 sq ft with minimum width of 6 ft."
+        },
+        {
+          "clause_reference": "5.2.2(a)(iii)",
+          "clause_title": "Minimum habitable room height",
+          "clause_text": "Minimum height of any habitable room from finished floor level to ceiling shall not be less than 9 ft 6 in."
+        },
+        {
+          "clause_reference": "5.3.1",
+          "clause_title": "External openings",
+          "clause_text": "Every room other than storage rooms shall have combined glazed area not less than 8% of floor space unless mechanical arrangement is provided; 50% of such openings shall allow free uninterrupted passage of air."
+        },
+        {
+          "clause_reference": "5.3.2",
+          "clause_title": "Toilet/bathroom ventilation",
+          "clause_text": "Every toilet, water closet, urinal stall and bathroom shall have daylight and ventilation by openings in external walls with combined area not less than 2 sq ft per water closet, urinal stall or bathroom."
+        },
+        {
+          "clause_reference": "5.3.3",
+          "clause_title": "Internal air wells / OTS Patio",
+          "clause_text": "Kitchens, toilets, water closets and bathrooms may have daylight/ventilation from internal air wells. Up to 2 storeys: minimum air-well area 50 sq ft and minimum width 6 ft. From 3 to 7 storeys: minimum area 100 sq ft and minimum width 8 ft. Air-well floor shall have impervious paving, drainage, access at bottom, and shall not be roofed except with fiberglass or similar material."
+        }
+      ],
+      "chapter_10_sanctioning_and_use_control": [
+        {
+          "clause_reference": "10.1(a)",
+          "clause_title": "Compliance with regulations",
+          "clause_text": "Every builder carrying out building works within LDA jurisdiction shall comply with these Building Regulations."
+        },
+        {
+          "clause_reference": "10.1(b)",
+          "clause_title": "Use consistent with Master Plan/approved scheme",
+          "clause_text": "No land or building shall be used in a manner inconsistent with the use prescribed in any Master Plan and Approved Scheme as applicable, or converted under applicable commercialization rules, or in violation of these Building Regulations."
+        },
+        {
+          "clause_reference": "10.2",
+          "clause_title": "Application for building works",
+          "clause_text": "Building works increasing covered area or altering original use of rooms require application to Authority on BR-1/BR-2. Addition/alteration plans shall show additions/alterations in red, existing work in black, and structures to be demolished in yellow."
+        },
+        {
+          "clause_reference": "10.8.3",
+          "clause_title": "Phased residential completion",
+          "clause_text": "Minimum first-phase residential floor area for completion: 3 Marla 250 sft, 5 Marla 300 sft, 7 Marla 350 sft, 10 Marla 375 sft, 12 Marla 450 sft, 1 Kanal 750 sft, 2 Kanal and above 1250 sft. Minimum floor area shall include at least one habitable room, latrine, bathroom and kitchen."
+        }
+      ]
+    },
+    "cad_submission_standard": {
+      "accepted_initial_format": "AutoCAD DWG",
+      "module_scope": "Residential house submissions only",
+      "units": {
+        "preferred": "feet/inches and square feet",
+        "lahore_conversions": {
+          "one_marla_sqft": 225,
+          "one_kanal_marla": 20,
+          "one_kanal_sqft": 4500
+        }
+      },
+      "layer_policy": {
+        "required_layer_count": 42,
+        "exact_template_names_required": true,
+        "similar_names_allowed": true,
+        "similar_name_note": "Applicant may use similar names such as Side Mandatory Space for Side building line; AI maps by synonym/confidence and flags ambiguous layers.",
+        "minimum_auto_mapping_confidence": 0.82,
+        "wrong_layer_geometry_action": "objection"
+      },
+      "required_layers": [
+        {
+          "sr": 1,
+          "exact_layer_name": "0",
+          "description": "Default AutoCAD layer",
+          "acceptable_synonyms": [
+            "zero",
+            "default"
+          ],
+          "required_for_ai_scrutiny": false
+        },
+        {
+          "sr": 2,
+          "exact_layer_name": "1 Plot Boundary",
+          "description": "Outer boundary of plot/site",
+          "acceptable_synonyms": [
+            "plot boundary",
+            "site boundary",
+            "plot limit",
+            "boundary plot"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 3,
+          "exact_layer_name": "2 Boundary wall",
+          "description": "Boundary wall around plot",
+          "acceptable_synonyms": [
+            "boundary wall",
+            "compound wall",
+            "outer wall"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 4,
+          "exact_layer_name": "3 Plot Line",
+          "description": "Plot demarcation/reference line",
+          "acceptable_synonyms": [
+            "plot line",
+            "property line",
+            "site line"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 5,
+          "exact_layer_name": "4 Front building line",
+          "description": "Front setback/building control line",
+          "acceptable_synonyms": [
+            "front setback",
+            "building line",
+            "front mandatory space",
+            "front open space"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 6,
+          "exact_layer_name": "5 Side building line",
+          "description": "Side mandatory space/building control line",
+          "acceptable_synonyms": [
+            "side mandatory space",
+            "side space",
+            "side setback",
+            "side open space",
+            "side b.l."
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 7,
+          "exact_layer_name": "6 Rear Building line",
+          "description": "Rear mandatory space/building control line",
+          "acceptable_synonyms": [
+            "rear mandatory space",
+            "rear space",
+            "rear setback",
+            "back space"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 8,
+          "exact_layer_name": "7 Section line",
+          "description": "Section/cutting line",
+          "acceptable_synonyms": [
+            "section line",
+            "cutting line",
+            "section mark"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 9,
+          "exact_layer_name": "8 Ramp",
+          "description": "Vehicle ramp",
+          "acceptable_synonyms": [
+            "ramp",
+            "car ramp",
+            "vehicle ramp",
+            "basement ramp"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 10,
+          "exact_layer_name": "9 Landscape",
+          "description": "Lawn/green area/plantation",
+          "acceptable_synonyms": [
+            "landscape",
+            "lawn",
+            "green area",
+            "plantation",
+            "soft area"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 11,
+          "exact_layer_name": "10 Dimension",
+          "description": "Dimension lines",
+          "acceptable_synonyms": [
+            "dimension",
+            "dimensions",
+            "dim"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 12,
+          "exact_layer_name": "11 Measurement Text",
+          "description": "Measurement annotation text",
+          "acceptable_synonyms": [
+            "measurement text",
+            "dimension text",
+            "measurement annotation",
+            "sizes"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 13,
+          "exact_layer_name": "12 Text General",
+          "description": "General labels and notes",
+          "acceptable_synonyms": [
+            "text general",
+            "general text",
+            "notes",
+            "labels"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 14,
+          "exact_layer_name": "13 External walls",
+          "description": "External structural walls",
+          "acceptable_synonyms": [
+            "external walls",
+            "outer walls",
+            "external wall",
+            "main walls"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 15,
+          "exact_layer_name": "14 Internal walls",
+          "description": "Internal partition walls",
+          "acceptable_synonyms": [
+            "internal walls",
+            "partition walls",
+            "internal wall"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 16,
+          "exact_layer_name": "15 Door",
+          "description": "Door symbols/openings",
+          "acceptable_synonyms": [
+            "door",
+            "doors",
+            "gate door"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 17,
+          "exact_layer_name": "16 Windows",
+          "description": "Window symbols/openings",
+          "acceptable_synonyms": [
+            "windows",
+            "window",
+            "win"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 18,
+          "exact_layer_name": "17 Ventilator",
+          "description": "Ventilator openings",
+          "acceptable_synonyms": [
+            "ventilator",
+            "vent",
+            "ventilation opening"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 19,
+          "exact_layer_name": "18 Stairs",
+          "description": "Staircase details",
+          "acceptable_synonyms": [
+            "stairs",
+            "stair",
+            "staircase",
+            "steps"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 20,
+          "exact_layer_name": "19 Porch",
+          "description": "Car porch/covered parking",
+          "acceptable_synonyms": [
+            "porch",
+            "car porch",
+            "garage porch",
+            "covered parking"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 21,
+          "exact_layer_name": "20 Services",
+          "description": "Utility/services layout",
+          "acceptable_synonyms": [
+            "services",
+            "utility",
+            "utilities",
+            "service duct"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 22,
+          "exact_layer_name": "21 Mumty",
+          "description": "Mumty/stair head room",
+          "acceptable_synonyms": [
+            "mumty",
+            "stair head",
+            "head room",
+            "stair tower"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 23,
+          "exact_layer_name": "22 Water tank",
+          "description": "Underground/overhead water tank",
+          "acceptable_synonyms": [
+            "water tank",
+            "ugwt",
+            "ohwt",
+            "underground water tank",
+            "overhead water tank"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 24,
+          "exact_layer_name": "23 OTS Patio",
+          "description": "Open-to-sky patio/courtyard/internal air well",
+          "acceptable_synonyms": [
+            "ots patio",
+            "ots",
+            "patio",
+            "open to sky",
+            "courtyard",
+            "air well",
+            "internal air well"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 25,
+          "exact_layer_name": "24 Parapet wall",
+          "description": "Roof parapet wall",
+          "acceptable_synonyms": [
+            "parapet",
+            "parapet wall"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 26,
+          "exact_layer_name": "25 Column",
+          "description": "Structural RCC columns",
+          "acceptable_synonyms": [
+            "column",
+            "columns",
+            "rcc column"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 27,
+          "exact_layer_name": "26 Beam",
+          "description": "Structural beams",
+          "acceptable_synonyms": [
+            "beam",
+            "beams",
+            "rcc beam"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 28,
+          "exact_layer_name": "27 Slab",
+          "description": "RCC slab",
+          "acceptable_synonyms": [
+            "slab",
+            "roof slab",
+            "rcc slab"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 29,
+          "exact_layer_name": "28 Foundation",
+          "description": "Foundation/footing layout",
+          "acceptable_synonyms": [
+            "foundation",
+            "footing",
+            "foundations"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 30,
+          "exact_layer_name": "29 Hatch",
+          "description": "Hatch/pattern filling",
+          "acceptable_synonyms": [
+            "hatch",
+            "pattern",
+            "fill"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 31,
+          "exact_layer_name": "30 Pavement",
+          "description": "Paved/open flooring area",
+          "acceptable_synonyms": [
+            "pavement",
+            "paved area",
+            "driveway",
+            "floor paving"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 32,
+          "exact_layer_name": "31 Rain water tank",
+          "description": "Rainwater harvesting/storage tank",
+          "acceptable_synonyms": [
+            "rain water tank",
+            "rainwater tank",
+            "rain water harvesting",
+            "rainwater harvesting",
+            "infiltration well",
+            "invert well"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 33,
+          "exact_layer_name": "32 Sewer line",
+          "description": "Sewerage/drainage line",
+          "acceptable_synonyms": [
+            "sewer line",
+            "sewerage",
+            "drainage line",
+            "waste line"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 34,
+          "exact_layer_name": "33 terrace",
+          "description": "Open terrace/roof area",
+          "acceptable_synonyms": [
+            "terrace",
+            "roof terrace",
+            "open terrace"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 35,
+          "exact_layer_name": "34 Solar",
+          "description": "Solar panel/system layout",
+          "acceptable_synonyms": [
+            "solar",
+            "solar panel",
+            "pv panel"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 36,
+          "exact_layer_name": "35 Floor Level",
+          "description": "Finished floor/reference level",
+          "acceptable_synonyms": [
+            "floor level",
+            "ffl",
+            "level",
+            "finished floor level"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 37,
+          "exact_layer_name": "36 Extra",
+          "description": "Miscellaneous/additional details",
+          "acceptable_synonyms": [
+            "extra",
+            "misc",
+            "miscellaneous"
+          ],
+          "required_for_ai_scrutiny": false
+        },
+        {
+          "sr": 38,
+          "exact_layer_name": "37 Applicant Information",
+          "description": "Applicant/owner information",
+          "acceptable_synonyms": [
+            "applicant information",
+            "owner information",
+            "applicant details",
+            "owner details"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 39,
+          "exact_layer_name": "38 Plot Information",
+          "description": "Plot/site information",
+          "acceptable_synonyms": [
+            "plot information",
+            "site information",
+            "plot details",
+            "site details"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 40,
+          "exact_layer_name": "39 Measurements",
+          "description": "Plot/building measurements",
+          "acceptable_synonyms": [
+            "measurements",
+            "area measurements",
+            "covered area",
+            "plot measurements"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 41,
+          "exact_layer_name": "40 Submission details",
+          "description": "Submission/application details",
+          "acceptable_synonyms": [
+            "submission details",
+            "application details",
+            "case details"
+          ],
+          "required_for_ai_scrutiny": true
+        },
+        {
+          "sr": 42,
+          "exact_layer_name": "Defpoints",
+          "description": "AutoCAD default definition points layer",
+          "acceptable_synonyms": [
+            "defpoints",
+            "definition points"
+          ],
+          "required_for_ai_scrutiny": false
+        }
+      ],
+      "sheet_layout": {
+        "lower_half_required_boxes": [
+          "Basement Plan",
+          "Ground Floor Plan",
+          "First Floor Plan",
+          "Second Floor Plan",
+          "Applicant and Coverage Details"
+        ],
+        "upper_half_required_content": [
+          "Site plan with road width/ROW and north arrow",
+          "Front elevation showing residential outlook",
+          "Sections with floor heights/roof/parapet",
+          "OHWT and UGWT detail",
+          "Rainwater harvesting/invert well or tank detail",
+          "Stair/mumty and roof plan",
+          "Solar panel layout where proposed",
+          "Sewer/drainage/service layout"
+        ],
+        "applicant_coverage_box_must_show": [
+          "applicant/owner name",
+          "plot number/block/scheme",
+          "plot area",
+          "road width",
+          "floor-wise covered areas",
+          "ground coverage",
+          "FAR including basement",
+          "height/storeys",
+          "professional/signature information where applicable"
+        ]
+      }
+    },
+    "residential_house_rules": {
+      "scope_gate": {
+        "allowed_project_types": [
+          "new_residential_house",
+          "rebuild_residential_house",
+          "addition_alteration_residential_house"
+        ],
+        "reject_or_manual_review_if_detected": [
+          "apartment/flat/unit labels",
+          "shop/showroom/office/hall labels",
+          "hostel/guest-house layout",
+          "multiple independent units with common corridor",
+          "commercial facade/shutters"
+        ],
+        "clause_reference": "Chapter 1 residential definition; 10.1(b)"
+      },
+      "plot_and_road_classification": {
+        "road_above_50ft_main_road": {
+          "trigger": "right_of_way_ft > 50",
+          "additional_check": "Residential outlook/use risk assessment under Clause 10.1(b)."
+        },
+        "road_60ft_and_above": {
+          "trigger": "right_of_way_ft >= 60",
+          "additional_check": "Separate basement plan required where basement is proposed under Clause 2.7(iii)."
+        },
+        "corner_plot": {
+          "check": "Porch on corner plot allowed along longer side only per Clause 2.1.4."
+        }
+      },
+      "mandatory_open_spaces_approved_scheme": [
+        {
+          "plot_size": "less_than_5_marla",
+          "front_ft": 5,
+          "rear_ft": 5,
+          "side": "not_required",
+          "clause": "2.2.1"
+        },
+        {
+          "plot_size": "5_to_less_than_10_marla",
+          "front_ft": 5,
+          "rear_ft": 5,
+          "side": "not_required",
+          "clause": "2.2.1"
+        },
+        {
+          "plot_size": "10_to_30_marla",
+          "front_ft": 10,
+          "rear_ft": 7,
+          "side": "5 ft on one side",
+          "clause": "2.2.1"
+        },
+        {
+          "plot_size": "above_30_marla_to_less_than_2_kanal",
+          "front_ft": 10,
+          "rear_ft": 7,
+          "side": "5 ft on both sides",
+          "clause": "2.2.1"
+        },
+        {
+          "plot_size": "2_kanal_to_less_than_4_kanal",
+          "front_ft": 20,
+          "rear_ft": 10,
+          "side": "10 ft on both sides",
+          "clause": "2.2.1"
+        },
+        {
+          "plot_size": "4_kanal_and_above",
+          "front_ft": 20,
+          "rear_ft": 13,
+          "side": "13 ft on both sides",
+          "clause": "2.2.1"
+        }
+      ],
+      "coverage_far_height_storeys_approved_scheme": [
+        {
+          "plot_size": "less_than_5_marla",
+          "max_storeys_excluding_basement": 3,
+          "max_ground_coverage_percent": 80,
+          "max_height_ft": 38,
+          "max_far": 2.4,
+          "parking": "optional",
+          "clause": "2.2.3"
+        },
+        {
+          "plot_size": "5_to_less_than_10_marla",
+          "max_storeys_excluding_basement": 3,
+          "max_ground_coverage_percent": 75,
+          "max_height_ft": 38,
+          "max_far": 2.3,
+          "parking": "optional",
+          "clause": "2.2.3"
+        },
+        {
+          "plot_size": "10_marla_to_less_than_1_kanal",
+          "max_storeys_excluding_basement": 3,
+          "max_ground_coverage_percent": 70,
+          "max_height_ft": 45,
+          "max_far": 2.8,
+          "parking": "optional",
+          "clause": "2.2.3"
+        },
+        {
+          "plot_size": "1_kanal_to_30_marla",
+          "max_storeys_excluding_basement": 3,
+          "max_ground_coverage_percent": 65,
+          "max_height_ft": 45,
+          "max_far": 2.6,
+          "parking": "optional",
+          "clause": "2.2.3"
+        },
+        {
+          "plot_size": "above_30_marla_to_less_than_2_kanal",
+          "max_storeys_excluding_basement": 3,
+          "max_ground_coverage_percent": 60,
+          "max_height_ft": 45,
+          "max_far": 2.4,
+          "parking": "optional",
+          "clause": "2.2.3"
+        },
+        {
+          "plot_size": "2_kanal_and_above",
+          "max_storeys_excluding_basement": 3,
+          "max_ground_coverage_percent": 55,
+          "max_height_ft": 45,
+          "max_far": 2.2,
+          "parking": "optional",
+          "clause": "2.2.3"
+        }
+      ],
+      "minimum_room_kitchen_height_rules": {
+        "habitable_room": {
+          "min_area_sqft": 100,
+          "min_width_ft": 8,
+          "min_height": "9 ft 6 in",
+          "clause": "5.2.2(a)(i),(iii)"
+        },
+        "kitchen": {
+          "min_area_sqft": 50,
+          "min_width_ft": 6,
+          "clause": "5.2.2(a)(ii)"
+        },
+        "basement_room": {
+          "min_height_ft": 8,
+          "min_basement_area_sqft": 100,
+          "must_leave_mandatory_spaces": true,
+          "clause": "5.2.1"
+        }
+      },
+      "ots_patio_airwell_rules": {
+        "mapping_note": "Applicant labels OTS, patio, open-to-sky, courtyard and internal air well map to layer 23 OTS Patio where used for light/ventilation.",
+        "up_to_2_storeys": {
+          "min_area_sqft": 50,
+          "min_width_ft": 6,
+          "clause": "5.3.3(i)"
+        },
+        "three_storeys_residential_house": {
+          "min_area_sqft": 100,
+          "min_width_ft": 8,
+          "clause": "5.3.3(ii)"
+        },
+        "absolute_minimum_width_policy_ft": 6,
+        "drainage_and_roofing": "Impervious paving, drainage and bottom access required; shall not be roofed except fiberglass or similar material.",
+        "clause": "5.3.3"
+      },
+      "porch_and_side_space_rules": {
+        "base_clause_rule": {
+          "max_porch_length_ft": 20,
+          "allowed_in_side_space": true,
+          "corner_plot_rule": "Allowed along longer side",
+          "room_over_porch_clause_allows_limited_case": true,
+          "clause": "2.1.4"
+        },
+        "bath_on_porch_policy": {
+          "allowed": false,
+          "check": "No bath/toilet/water closet shall be accepted over or on car porch.",
+          "authority_basis": "LDA user-stated scrutiny/amendment policy; reference with Clauses 2.1.4 and 2.1.5.",
+          "objection_clause_reference": "2.1.4, 2.1.5"
+        },
+        "second_floor_coverage_on_porch_side_space_policy": {
+          "allowed": false,
+          "check": "No second-floor coverage/room/bath over car porch within side mandatory space shall be accepted.",
+          "authority_basis": "LDA user-stated scrutiny/amendment policy; stricter than extracted base text of Clause 2.1.4.",
+          "objection_clause_reference": "2.1.4, 2.7.1(b)"
+        },
+        "mandatory_space_violation": {
+          "non_compoundable": true,
+          "clause": "2.7.1(b)"
+        }
+      },
+      "toilet_bath_rules": {
+        "rear_corner_toilet_bathroom": {
+          "max_area_sqft": 40,
+          "max_height_ft": 8,
+          "allowed_location": "rear corner towards dead wall",
+          "must_be_integral_part_of_main_building": true,
+          "clause": "2.1.5"
+        },
+        "ventilation": {
+          "min_external_opening_area_sqft_per_fixture_or_bathroom": 2,
+          "clause": "5.3.2"
+        },
+        "not_allowed_locations_by_policy": [
+          "on porch",
+          "over car porch",
+          "inside side mandatory space as second-floor coverage",
+          "front porch projection"
+        ]
+      },
+      "water_rain_grey_energy": {
+        "ugwt_ohwt_required": {
+          "plot_size_threshold": "3_marla_and_above",
+          "clause": "2.7(vii)"
+        },
+        "rainwater_required": {
+          "plot_size_threshold": "above_5_marla",
+          "must_prevent_flow_to_road": true,
+          "plot_line_grating_required": true,
+          "clause": "2.7(vi), 10.8.8"
+        },
+        "grey_water": {
+          "plot_size_threshold": "1_kanal_and_above",
+          "action": "manual verification if detail absent",
+          "clause": "2.7(iv)"
+        },
+        "energy_efficiency": {
+          "check_layers": [
+            "13 External walls",
+            "16 Windows",
+            "27 Slab",
+            "34 Solar"
+          ],
+          "clause": "2.7(viii)-(ix)"
+        }
+      },
+      "major_road_residential_outlook": {
+        "trigger": "road_width_ft > 50 or plot falls on declared main road",
+        "clause_reference": "10.1(b)",
+        "required_outlook": "Design must clearly read as a residential house and not facilitate commercial, apartment, hostel, guest-house or mixed-use future use.",
+        "non_compliance_indicators": [
+          "shop/showroom/office/clinic/academy/hall/reception/unit/flat/apartment labels",
+          "large shop-like front openings or shutter bays",
+          "commercial glass facade/signage band",
+          "central corridor serving repeated rooms",
+          "separate independent access to each floor inconsistent with single house",
+          "excessive toilets without residential room logic",
+          "front parking layout resembling customer parking",
+          "absence of family lounge/drawing/dining/kitchen residential logic"
+        ],
+        "actions": {
+          "low_confidence": "manual_review_required",
+          "probable_non_residential": "objection_letter",
+          "clear_non_residential_or_repeat": "disapproval_recommended"
+        },
+        "standard_objection_text": "The plot falls on a main road/road above 50 ft width and the submitted design does not clearly confirm residential outlook and future residential use. Revise frontage, circulation and room-use arrangement strictly as a residential house under Clause 10.1(b)."
+      }
+    },
+    "calculation_engine": {
+      "geometry_sources_by_priority": [
+        "closed polylines on canonical mapped layers",
+        "dimension text and measurement annotations",
+        "applicant coverage table",
+        "manual verification if extracted values conflict"
+      ],
+      "formulas": {
+        "plot_area_sqft": "area(closed Plot Boundary polygon)",
+        "ground_coverage_percent": "ground_floor_covered_area_sqft / plot_area_sqft * 100",
+        "far": "sum(all covered floor areas including basement) / plot_area_sqft",
+        "building_height_ft": "crown of road to top of parapet wall",
+        "storeys_excluding_basement": "count ground, first, second and any additional above-ground plan",
+        "patio_minimum": "if storeys <= 2 then 50 sqft and 6 ft width; if storeys == 3 then 100 sqft and 8 ft width"
+      },
+      "tolerances": {
+        "linear_ft": 0.05,
+        "area_percent": 0.5
+      }
+    },
+    "ai_scrutiny_workflow": [
+      {
+        "step": 1,
+        "name": "file_validation",
+        "checks": [
+          "DWG readable",
+          "scale/units detected",
+          "42-layer standard present",
+          "sheet layout detected"
+        ],
+        "fail_action": "CAD technical objection"
+      },
+      {
+        "step": 2,
+        "name": "layer_mapping",
+        "checks": [
+          "exact layer names",
+          "synonym mapping",
+          "mandatory layers missing",
+          "wrong-layer geometry",
+          "unknown layers containing scrutiny geometry"
+        ],
+        "fail_action": "layer correction objection"
+      },
+      {
+        "step": 3,
+        "name": "submission_layout",
+        "checks": [
+          "lower five boxes",
+          "upper site/elevation/section/OHWT/rainwater details",
+          "applicant and coverage table"
+        ],
+        "fail_action": "layout objection"
+      },
+      {
+        "step": 4,
+        "name": "plot_road_context",
+        "checks": [
+          "plot area",
+          "plot frontage",
+          "road ROW",
+          "corner plot",
+          "approved/established/open area",
+          "main road >50 ft",
+          "road >=60 ft"
+        ],
+        "fail_action": "manual review or clause-wise objection"
+      },
+      {
+        "step": 5,
+        "name": "residential_geometry_rules",
+        "checks": [
+          "open spaces",
+          "coverage",
+          "FAR including basement",
+          "height",
+          "storeys",
+          "porch",
+          "bath/toilet",
+          "OTS/patio/airwell",
+          "room/kitchen sizes",
+          "water tanks",
+          "rainwater"
+        ],
+        "fail_action": "regulation objection"
+      },
+      {
+        "step": 6,
+        "name": "residential_outlook_and_use",
+        "checks": [
+          "residential definition",
+          "Clause 10.1(b)",
+          "main-road residential outlook",
+          "commercial/apartment/hostel pattern detection"
+        ],
+        "fail_action": "objection or disapproval recommendation"
+      },
+      {
+        "step": 7,
+        "name": "report_generation",
+        "outputs": [
+          "compliance table",
+          "violations with clause text",
+          "AI confidence",
+          "recommended decision",
+          "draft letter"
+        ]
+      }
+    ],
+    "violation_classification": {
+      "critical_non_compoundable": [
+        {
+          "violation": "coverage/construction in mandatory open spaces",
+          "action": "disapproval/enforcement/manual review",
+          "clause": "2.7.1(b)"
+        },
+        {
+          "violation": "commercial/apartment/hostel/mixed-use design submitted as residential house",
+          "action": "objection/disapproval",
+          "clause": "Chapter 1 residential definition; 10.1(b)"
+        },
+        {
+          "violation": "more than 3 storeys in residential house module",
+          "action": "disapproval/manual review",
+          "clause": "2.7.1(a)"
+        },
+        {
+          "violation": "second-floor coverage over porch in side mandatory space",
+          "action": "objection/disapproval as per LDA scrutiny policy",
+          "clause": "2.1.4; 2.7.1(b)"
+        },
+        {
+          "violation": "bath/toilet on porch",
+          "action": "objection",
+          "clause": "2.1.4; 2.1.5"
+        }
+      ],
+      "major_rectifiable": [
+        "FAR exceeded",
+        "ground coverage exceeded",
+        "height exceeded",
+        "setback deficient",
+        "minimum room/kitchen/patio size deficient",
+        "basement separate plan missing on 60 ft+ ROW",
+        "structural documents missing above 38 ft",
+        "UGWT/OHWT/rainwater missing",
+        "wrong CAD layers",
+        "missing site/elevation/section/applicant coverage table"
+      ],
+      "minor_rectifiable": [
+        "missing north arrow",
+        "minor label ambiguity",
+        "unclear dimension text",
+        "synonym below confidence threshold"
+      ]
+    },
+    "auto_objection_templates": [
+      {
+        "code": "CAD_LAYER_001",
+        "condition": "mandatory layers missing/wrongly named",
+        "clause": "CAD submission standard",
+        "text": "The submitted DWG file does not conform to the prescribed LDA 42-layer residential house CAD standard. Submit revised DWG using prescribed layers or acceptable equivalent layer names."
+      },
+      {
+        "code": "CAD_LAYOUT_002",
+        "condition": "required sheet layout missing",
+        "clause": "CAD submission standard",
+        "text": "The drawing is not arranged according to LDA residential house submission layout. Lower half must contain Basement, Ground Floor, First Floor, Second Floor and Applicant/Coverage boxes, and upper half must contain site plan, elevation, sections, OHWT/UGWT/rainwater and related details."
+      },
+      {
+        "code": "SETBACK_003",
+        "condition": "mandatory open space deficient",
+        "clause": "2.2.1 / 2.1.1 / 2.3.1 as applicable",
+        "text": "Mandatory open spaces/building lines are deficient. Revise front, rear and side spaces according to the applicable residential site requirement clause."
+      },
+      {
+        "code": "COVERAGE_FAR_004",
+        "condition": "coverage or FAR exceeds limit",
+        "clause": "2.1.3 or 2.2.3",
+        "text": "Ground coverage/FAR exceeds the permissible limit for the plot size. Revise covered areas and applicant coverage table according to the applicable clause."
+      },
+      {
+        "code": "ROOM_SIZE_005",
+        "condition": "minimum room/kitchen/basement height deficient",
+        "clause": "5.2.1, 5.2.2(a)",
+        "text": "Minimum internal building requirements are deficient. Habitable rooms, kitchens, basement rooms and inter-floor arrangements must comply with Clause 5.2."
+      },
+      {
+        "code": "PATIO_OTS_006",
+        "condition": "OTS/patio/internal air well deficient",
+        "clause": "5.3.3",
+        "text": "OTS/patio/internal air well is deficient. Provide minimum area and width according to number of storeys and keep it open-to-sky/drained as required."
+      },
+      {
+        "code": "BATH_PORCH_007",
+        "condition": "bath/toilet on porch",
+        "clause": "2.1.4, 2.1.5",
+        "text": "Bath/toilet over or on car porch is not acceptable under LDA residential house scrutiny. Toilet/bathroom provision must comply with Clause 2.1.5 and may not be treated as porch coverage."
+      },
+      {
+        "code": "SECOND_FLOOR_PORCH_008",
+        "condition": "second floor coverage over porch in side space",
+        "clause": "2.1.4, 2.7.1(b)",
+        "text": "Coverage over car porch/side mandatory space at second-floor level is not acceptable under LDA residential house scrutiny. Remove the proposed coverage and keep mandatory side space compliant."
+      },
+      {
+        "code": "MAIN_ROAD_OUTLOOK_009",
+        "condition": "main road >50 ft residential outlook not confirmed",
+        "clause": "10.1(b)",
+        "text": "The plot falls on a main road/road above 50 ft width and the submitted design does not clearly confirm residential outlook and future residential use. Revise frontage, circulation and room-use arrangement strictly as a residential house under Clause 10.1(b)."
+      },
+      {
+        "code": "BASEMENT_010",
+        "condition": "separate basement plan missing for 60 ft+ ROW",
+        "clause": "2.7(iii)",
+        "text": "For plot abutting road having 60 ft and above right of way, separate basement plan is required. Submit basement plan separately for scrutiny/sanction where basement is proposed."
+      }
+    ],
+    "report_output_schema": {
+      "decision_values": [
+        "approval",
+        "conditional_approval",
+        "objection_letter",
+        "disapproval_letter",
+        "manual_review_required"
+      ],
+      "compliance_row_fields": [
+        "rule_id",
+        "rule_name",
+        "clause_reference",
+        "clause_text",
+        "required_value",
+        "extracted_value",
+        "status",
+        "severity",
+        "ai_confidence",
+        "recommended_action",
+        "objection_text"
+      ],
+      "recommended_report_sections": [
+        "application/applicant details",
+        "plot and road details",
+        "CAD layer compliance",
+        "sheet layout compliance",
+        "residential scope gate",
+        "coverage/FAR/height calculations",
+        "open-space compliance",
+        "room/kitchen/patio/porch checks",
+        "water/rain/energy checks",
+        "main-road residential outlook",
+        "clause-wise objections",
+        "recommended decision"
+      ]
+    },
+    "approval_conditions": [
+      "Building shall be constructed strictly according to approved residential house plan.",
+      "Building shall be used strictly for residential purpose only and not as commercial, apartment, hostel, guest house or mixed use.",
+      "No alteration/removal of partition walls or change in use shall be made without prior LDA approval.",
+      "Mandatory open spaces shall remain open; violations are non-compoundable.",
+      "Basement, if separately released, shall not constitute approval of upper floors unless separately sanctioned.",
+      "UGWT/OHWT, rainwater, drainage and energy-efficiency provisions shall be implemented where applicable.",
+      "Final decision remains subject to competent authority, site verification and applicable amendments/circulars."
+    ]
+  }
 }

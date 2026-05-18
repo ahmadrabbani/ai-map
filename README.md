@@ -106,6 +106,49 @@ php artisan serve
 npm run dev
 ```
 
+## AD ePermit + DFPS workflow
+
+This project includes end-to-end public submission -> AD ePermit decision -> DFPS/internal push flow.
+
+### New status lifecycle
+
+- `draft`
+- `submitted_to_ad_epermit`
+- `under_review`
+- `observation_marked`
+- `rejected_by_ad_epermit`
+- `approved_by_ad_epermit`
+- `pushed_to_dfps`
+- `dfps_push_failed`
+
+### Required environment variables
+
+```bash
+DFPS_PUSH_ENDPOINT=
+DFPS_USERNAME=
+DFPS_PASSWORD=
+DFPS_TOKEN=
+DFPS_TIMEOUT=60
+```
+
+### Manual end-to-end test flow
+
+1. Submit a public application from `/building-plan-ai/applications/create`.
+2. Confirm application is stored in `building_plan_applications` with `submitted_to_ad_epermit`.
+3. Login as AD ePermit user and open `/admin/plan/ad-epermit`.
+4. Open an application detail page.
+5. Save satellite site review JSON in **Google Satellite Site Review** section.
+6. Use **Decision Panel** to mark `observation`, `reject`, or `approve`.
+7. Push to DFPS using **Push To DFPS/Internal** button.
+8. Verify generated ZIP under `storage/app/private/uploads/dfps-zips/{application_id}/`.
+9. Verify `dfps_push_logs` and `application_status_logs` entries.
+
+### Running the workflow tests
+
+```bash
+php artisan test --filter=AdEpermitWorkflowTest
+```
+
 ## CAD analysis workflow
 
 The CAD compliance workflow is driven by `app/Services/CadComplianceService.php`.

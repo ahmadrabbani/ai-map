@@ -57,10 +57,204 @@ class RuleValidationService
         }
 
         $meta = json_decode(file_get_contents($metaPath), true);
-        $category = data_get($drawing->metadata_json, 'plot_size_category', '5_marla');
+        $category = (string) data_get($drawing->metadata_json, 'plot_size_category', '');
+        if ($category === '') {
+            $category = $this->inferPlotSizeCategory($drawing);
+            $metadata = is_array($drawing->metadata_json) ? $drawing->metadata_json : [];
+            $metadata['plot_size_category'] = $category;
+            $drawing->metadata_json = $metadata;
+            $drawing->save();
+        }
         $rules = $meta['plot_size_categories'][$category]['ground_floor_rules'] ?? [];
+        if (! is_array($rules) || empty($rules)) {
+            $rules = $this->rulesFromResidentialHouseBands($meta, $this->resolvePlotAreaSqft($drawing));
+        }
 
         return is_array($rules) ? $rules : [];
+    }
+
+    private function inferPlotSizeCategory(MapDrawing $drawing): string
+    {
+        $plotAreaSqft = $this->resolvePlotAreaSqft($drawing);
+
+        if ($plotAreaSqft === null || $plotAreaSqft <= 0) {
+            return '5_marla';
+        }
+        if ($plotAreaSqft <= 1125.0) {
+            return '5_marla';
+        }
+        if ($plotAreaSqft <= 2250.0) {
+            return '10_marla';
+        }
+
+        return 'above_10_marla';
+    }
+
+    private function resolvePlotAreaSqft(MapDrawing $drawing): ?float
+    {
+        $meta = is_array($drawing->metadata_json) ? $drawing->metadata_json : [];
+        $textArea = data_get($meta, 'cad_text_measurement_metrics.plot_area');
+        if (is_numeric($textArea)) {
+            return (float) $textArea;
+        }
+        $declaredArea = data_get($meta, 'plot_area_sqft');
+        if (is_numeric($declaredArea)) {
+            return (float) $declaredArea;
+        }
+        $geometryArea = $drawing->geometryResults()
+            ->where('key', 'plot_area_sqft')
+            ->orderByDesc('id')
+            ->value('value');
+        if (is_numeric($geometryArea)) {
+            return (float) $geometryArea;
+        }
+
+        return null;
+    }
+
+    private function rulesFromResidentialHouseBands(array $meta, ?float $plotAreaSqft): array
+    {
+        if (! is_array($meta) || $plotAreaSqft === null || $plotAreaSqft <= 0) {
+            return [];
+        }
+
+        $marla = $plotAreaSqft / 225.0;
+        $coverageRows = data_get($meta, 'source_rulebook_snapshot.residential_house_rules.coverage_far_height_storeys_approved_scheme', []);
+        $spaceRows = data_get($meta, 'source_rulebook_snapshot.residential_house_rules.mandatory_open_spaces_approved_scheme', []);
+        if (! is_array($coverageRows) || ! is_array($spaceRows)) {
+            return [];
+        }
+
+        $coverage = $this->pickCoverageBand($coverageRows, $marla);
+        $spaces = $this->pickOpenSpaceBand($spaceRows, $marla);
+        if (! is_array($coverage) && ! is_array($spaces)) {
+            return [];
+        }
+
+        $rules = [];
+        if (is_array($spaces)) {
+            $front = $this->toFloat($spaces['front_ft'] ?? null);
+            $rear = $this->toFloat($spaces['rear_ft'] ?? null);
+            $side = $this->sideSetbackFromLabel($spaces['side'] ?? null);
+            if ($front !== null) {
+                $rules[] = ['id' => 'SETBACK_FRONT', 'title' => 'Front setback requirement', 'operator' => '>=', 'value_ft' => $front];
+            }
+            if ($rear !== null) {
+                $rules[] = ['id' => 'SETBACK_REAR', 'title' => 'Rear setback requirement', 'operator' => '>=', 'value_ft' => $rear];
+            }
+            if ($side !== null) {
+                $rules[] = [
+                    'id' => 'SETBACK_SIDE',
+                    'title' => 'Side setback requirement',
+                    'operator' => $side > 0 ? '>=' : '==',
+                    'value_ft' => $side,
+                ];
+            }
+        }
+        if (is_array($coverage)) {
+            $gc = $this->toFloat($coverage['max_ground_coverage_percent'] ?? null);
+            $far = $this->toFloat($coverage['max_far'] ?? null);
+            $height = $this->toFloat($coverage['max_height_ft'] ?? null);
+            $storeys = $this->toFloat($coverage['max_storeys_excluding_basement'] ?? null);
+            if ($gc !== null) {
+                $rules[] = ['id' => 'GROUND_COVERAGE', 'title' => 'Maximum ground coverage', 'operator' => '<=', 'value_percent' => $gc];
+            }
+            if ($far !== null) {
+                $rules[] = ['id' => 'FAR_LIMIT', 'title' => 'Maximum Floor Area Ratio', 'operator' => '<=', 'value' => $far];
+            }
+            if ($storeys !== null) {
+                $rules[] = ['id' => 'MAX_STOREYS', 'title' => 'Maximum number of storeys', 'operator' => '<=', 'value' => $storeys];
+            }
+            if ($height !== null) {
+                $rules[] = ['id' => 'MAX_HEIGHT', 'title' => 'Maximum building height', 'operator' => '<=', 'value_ft' => $height];
+            }
+        }
+
+        return $rules;
+    }
+
+    private function pickCoverageBand(array $rows, float $marla): ?array
+    {
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $size = (string) ($row['plot_size'] ?? '');
+            if ($size === '10_marla_to_less_than_1_kanal' && $marla >= 10 && $marla < 20) {
+                return $row;
+            }
+            if ($size === '1_kanal_to_30_marla' && $marla >= 20 && $marla <= 30) {
+                return $row;
+            }
+            if ($size === 'above_30_marla_to_less_than_2_kanal' && $marla > 30 && $marla < 40) {
+                return $row;
+            }
+            if ($size === '2_kanal_and_above' && $marla >= 40) {
+                return $row;
+            }
+            if ($size === '5_to_less_than_10_marla' && $marla >= 5 && $marla < 10) {
+                return $row;
+            }
+            if ($size === 'less_than_5_marla' && $marla < 5) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+
+    private function pickOpenSpaceBand(array $rows, float $marla): ?array
+    {
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $size = (string) ($row['plot_size'] ?? '');
+            if ($size === '10_to_30_marla' && $marla >= 10 && $marla <= 30) {
+                return $row;
+            }
+            if ($size === 'above_30_marla_to_less_than_2_kanal' && $marla > 30 && $marla < 40) {
+                return $row;
+            }
+            if ($size === '2_kanal_to_less_than_4_kanal' && $marla >= 40 && $marla < 80) {
+                return $row;
+            }
+            if ($size === '4_kanal_and_above' && $marla >= 80) {
+                return $row;
+            }
+            if ($size === '5_to_less_than_10_marla' && $marla >= 5 && $marla < 10) {
+                return $row;
+            }
+            if ($size === 'less_than_5_marla' && $marla < 5) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+
+    private function sideSetbackFromLabel(mixed $value): ?float
+    {
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        if (! is_string($value)) {
+            return null;
+        }
+        $label = strtolower(trim($value));
+        if ($label === 'not_required') {
+            return 0.0;
+        }
+        if (preg_match('/(\d+(?:\.\d+)?)\s*ft/', $label, $m)) {
+            return (float) $m[1];
+        }
+
+        return null;
+    }
+
+    private function toFloat(mixed $value): ?float
+    {
+        return is_numeric($value) ? (float) $value : null;
     }
 
     private function requiredValue(array $rule): mixed
@@ -94,7 +288,7 @@ class RuleValidationService
         return match ($ruleCode) {
             'SETBACK_FRONT' => [$geometry['front_setback_ft']['value'] ?? null, $geometry['front_setback_ft']['status'] ?? 'needs_review'],
             'SETBACK_REAR' => [$geometry['rear_setback_ft']['value'] ?? null, $geometry['rear_setback_ft']['status'] ?? 'needs_review'],
-            'SETBACK_SIDE' => [$this->minimum([$geometry['left_setback_ft']['value'] ?? null, $geometry['right_setback_ft']['value'] ?? null]), $geometry['left_setback_ft']['status'] ?? 'needs_review'],
+            'SETBACK_SIDE' => [$this->maximum([$geometry['left_setback_ft']['value'] ?? null, $geometry['right_setback_ft']['value'] ?? null]), $geometry['left_setback_ft']['status'] ?? 'needs_review'],
             'GROUND_COVERAGE' => [$geometry['ground_coverage_percent']['value'] ?? null, $geometry['ground_coverage_percent']['status'] ?? 'needs_review'],
             'FAR_LIMIT' => [$geometry['far']['value'] ?? null, $geometry['far']['status'] ?? 'needs_review'],
             'MAX_STOREYS' => [$geometry['storey_count']['value'] ?? null, $geometry['storey_count']['status'] ?? 'needs_review'],
@@ -272,5 +466,15 @@ class RuleValidationService
         }
 
         return (float) min($nums);
+    }
+
+    private function maximum(array $values): ?float
+    {
+        $nums = array_values(array_filter($values, fn ($v) => is_numeric($v)));
+        if (empty($nums)) {
+            return null;
+        }
+
+        return (float) max($nums);
     }
 }

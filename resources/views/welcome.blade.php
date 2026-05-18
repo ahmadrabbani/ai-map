@@ -1,549 +1,259 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LDA Plan Approval Portal</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+    <style>
+        :root{--navy:#022a5c;--navy2:#05224c;--teal:#138a88;--text:#10284f;--muted:#56657d;--gold:#f0c55d;--line:#d9e2ec;}
+        body{background:#f8fbff;color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+        .topbar{background:linear-gradient(90deg,var(--navy),var(--navy2));}
+        .container-main{max-width:1540px;}
+        .logo-mark{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);}
+        .logo-mark i{color:var(--gold);width:28px;height:28px;}
+        .brand-title{font-weight:700;color:#fff;font-size:.92rem;line-height:1.1;}
+        .brand-sub{color:#d5e2f6;font-size:.92rem;}
+        .nav-link-top{color:#fff;text-decoration:none;font-weight:600;padding:.55rem .35rem;border-bottom:3px solid transparent;}
+        .nav-link-top.active,.nav-link-top:hover{border-color:var(--gold);}
+        .btn-login{border:1px solid #8eaad0;color:#fff;border-radius:10px;padding:.52rem 1.45rem;font-weight:600;}
+        .btn-register{background:var(--gold);color:#12223e;border-radius:10px;padding:.52rem 1.45rem;font-weight:700;border:1px solid #e3b84e;}
 
-        <title>{{ config('app.name', 'Map AI Verification') }}</title>
+        .hero{background:#fff;border:1px solid var(--line);border-top:none;}
+        .pill{display:inline-block;background:#eaf8f7;color:#0e8b87;border:1px solid #cfeeee;border-radius:10px;padding:.43rem .95rem;font-weight:700;letter-spacing:.02em;}
+        .hero-title{font-size:3.7rem;line-height:1.01;font-weight:800;color:#092b5a;}
+        .hero-copy{font-size:.92rem;color:#5e6c82;line-height:1.35;}
+        .cta-primary{background:#062d62;color:#fff;border-radius:12px;padding:.9rem 1.65rem;font-size:1rem;font-weight:700;border:none;}
+        .cta-outline{border:2px solid #355d93;color:#153560;border-radius:12px;padding:.82rem 1.65rem;font-size:1rem;font-weight:700;background:#fff;}
+        .mini-points{font-size:.95rem;color:#51617a;}
+        .mini-points i{color:#0f8f88;width:18px;height:18px;vertical-align:-3px;}
+        .hero-right-wrap{position:relative;min-height:560px;}
+        .hero-build{position:absolute;left:0;bottom:18px;width:55%;max-width:440px;z-index:1;}
+        .hero-dashboard{position:absolute;right:0;top:0;width:74%;max-width:820px;z-index:2;border-radius:22px;box-shadow:0 16px 32px rgba(13,39,79,.14);}
 
-        <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=space-grotesk:400,500,600,700|manrope:400,500,600" rel="stylesheet" />
+        .steps-card,.feature-card,.benefit-strip,.important-strip{border:1px solid var(--line);border-radius:14px;background:#fff;}
+        .step-icon{width:70px;height:70px;border-radius:50%;display:grid;place-items:center;}
+        .step-no{color:#0b8a87;font-weight:800;font-size:1rem;}
+        .step-title{font-size:.92rem;font-weight:700;color:#0d2758;line-height:1.12;}
+        .step-text{font-size:.95rem;color:#51617a;line-height:1.24;}
 
-        @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
-            @vite(['resources/css/app.css', 'resources/js/app.js'])
-        @endif
+        .section-title{font-size:1.65rem;font-weight:800;color:#102c5a;}
+        .feature-title{font-size:.82rem;line-height:1.08;font-weight:700;color:#112b59;}
+        .feature-text{font-size:.92rem;color:#51617a;line-height:1.24;}
 
-        <style>
-            :root {
-                color-scheme: light;
-                --bg: #f7f2ea;
-                --bg-deep: #efe6da;
-                --surface: #ffffff;
-                --ink: #101418;
-                --muted: #4e5a66;
-                --accent: #0f6b5f;
-                --accent-bright: #f28b2d;
-                --line: rgba(16, 20, 24, 0.12);
-                --shadow: 0 22px 45px rgba(16, 20, 24, 0.12);
-                --radius-lg: 24px;
-                --radius-md: 16px;
-                --radius-sm: 12px;
-            }
+        .benefit-strip{background:#f4fbfa;}
+        .benefit-item{border-right:1px solid #b9d8d6;}
+        .benefit-item:last-child{border-right:none;}
+        .benefit-title{font-weight:800;color:#107e7c;font-size:1.05rem;}
+        .benefit-text{font-size:.9rem;color:#4c5c73;line-height:1.2;}
 
-            * {
-                box-sizing: border-box;
-            }
+        .important-strip{background:#fffaf0;border-color:#f2d48f;}
+        .important-title{font-size:1.05rem;font-weight:800;color:#31240f;}
+        .important-text{font-size:.9rem;color:#5c4e34;}
 
-            body {
-                margin: 0;
-                font-family: "Manrope", "Segoe UI", sans-serif;
-                color: var(--ink);
-                background: radial-gradient(circle at 15% 20%, #f8f1dd, transparent 55%),
-                    radial-gradient(circle at 85% 15%, #d4efe7, transparent 55%),
-                    linear-gradient(140deg, var(--bg), var(--bg-deep));
-                min-height: 100vh;
-            }
+        .footer{background:linear-gradient(90deg,#052a5a,#041f46);color:#e6eefb;}
+        .footer-title{font-size:.92rem;font-weight:700;}
+        .footer-sub{font-size:.9rem;color:#c2d2e9;}
+        .footer-head{font-size:.86rem;font-weight:700;}
+        .footer-link{font-size:.9rem;color:#dbe7f8;text-decoration:none;display:block;margin:.22rem 0;}
+        .footer-mini{font-size:.9rem;color:#c2d2e9;}
+        .social-round{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#fff;color:#133765;font-size:1rem;}
+        .social-round i{width:16px;height:16px;}
+        .store-btn{border:1px solid #6f8fb8;border-radius:10px;padding:.35rem .7rem;display:inline-flex;align-items:center;gap:.45rem;color:#fff;text-decoration:none;font-size:.86rem;}
+        .store-btn i{width:16px;height:16px;}
+        .copyright{font-size:.82rem;color:#c1d0e6;}
 
-            a {
-                color: inherit;
-                text-decoration: none;
-            }
+        .icon-circle{display:grid;place-items:center;border-radius:999px;background:#e9f7f6;color:#138a88;}
+        .icon-sm{width:34px;height:34px;}
+        .icon-lg{width:66px;height:66px;}
+        .icon-circle i{width:24px;height:24px;stroke-width:2.1;}
+        .icon-sm i{width:17px;height:17px;}
 
-            .page {
-                position: relative;
-                overflow: hidden;
-            }
-
-            .page::before {
-                content: "";
-                position: absolute;
-                inset: 0;
-                background: linear-gradient(120deg, rgba(255, 255, 255, 0.35), transparent 40%),
-                    radial-gradient(circle at 80% 70%, rgba(242, 139, 45, 0.14), transparent 50%);
-                pointer-events: none;
-                z-index: 0;
-            }
-
-            .shell {
-                position: relative;
-                z-index: 1;
-                max-width: 1180px;
-                margin: 0 auto;
-                padding: 32px 28px 96px;
-            }
-
-            .topbar {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 24px;
-                padding: 12px 18px;
-                background: rgba(255, 255, 255, 0.7);
-                border: 1px solid var(--line);
-                border-radius: var(--radius-lg);
-                backdrop-filter: blur(12px);
-            }
-
-            .brand {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                font-family: "Space Grotesk", "Manrope", sans-serif;
-                font-weight: 600;
-                letter-spacing: 0.02em;
-            }
-
-            .brand-mark {
-                width: 40px;
-                height: 40px;
-                border-radius: 14px;
-                display: grid;
-                place-items: center;
-                font-weight: 700;
-                color: #fff;
-                background: linear-gradient(135deg, var(--accent), #133f39);
-                box-shadow: 0 10px 24px rgba(15, 107, 95, 0.28);
-            }
-
-            .nav {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 18px;
-                font-size: 0.95rem;
-                color: var(--muted);
-            }
-
-            .nav a {
-                padding: 6px 0;
-                border-bottom: 2px solid transparent;
-            }
-
-            .nav a:hover {
-                color: var(--ink);
-                border-color: var(--accent-bright);
-            }
-
-            .actions {
-                display: flex;
-                gap: 12px;
-                align-items: center;
-            }
-
-            .btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                padding: 10px 18px;
-                border-radius: 999px;
-                border: 1px solid transparent;
-                font-weight: 600;
-                font-size: 0.95rem;
-                transition: transform 0.2s ease, box-shadow 0.2s ease;
-            }
-
-            .btn.primary {
-                background: var(--accent);
-                color: #fff;
-                box-shadow: 0 12px 24px rgba(15, 107, 95, 0.25);
-            }
-
-            .btn.ghost {
-                border-color: var(--line);
-                background: #fff;
-            }
-
-            .btn:hover {
-                transform: translateY(-1px);
-            }
-
-            .hero {
-                display: grid;
-                grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-                gap: 36px;
-                margin-top: 56px;
-                align-items: center;
-            }
-
-            .hero h1 {
-                font-family: "Space Grotesk", "Manrope", sans-serif;
-                font-size: clamp(2.4rem, 3.2vw, 3.6rem);
-                line-height: 1.05;
-                margin: 0 0 18px;
-            }
-
-            .hero p {
-                margin: 0 0 24px;
-                color: var(--muted);
-                font-size: 1.05rem;
-            }
-
-            .hero-cta {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 12px;
-                margin-bottom: 24px;
-            }
-
-            .hero-meta {
-                display: flex;
-                gap: 18px;
-                flex-wrap: wrap;
-                color: var(--muted);
-                font-size: 0.9rem;
-            }
-
-            .meta-chip {
-                padding: 8px 12px;
-                background: rgba(255, 255, 255, 0.75);
-                border-radius: 999px;
-                border: 1px solid var(--line);
-            }
-
-            .hero-panel {
-                background: var(--surface);
-                border-radius: var(--radius-lg);
-                border: 1px solid var(--line);
-                padding: 28px;
-                box-shadow: var(--shadow);
-                position: relative;
-            }
-
-            .panel-badge {
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                font-size: 0.85rem;
-                padding: 6px 12px;
-                border-radius: 999px;
-                background: rgba(15, 107, 95, 0.1);
-                color: var(--accent);
-                font-weight: 600;
-            }
-
-            .panel-title {
-                margin: 18px 0 14px;
-                font-size: 1.2rem;
-                font-weight: 600;
-            }
-
-            .panel-grid {
-                display: grid;
-                gap: 14px;
-            }
-
-            .panel-item {
-                display: grid;
-                gap: 6px;
-                padding: 14px;
-                border-radius: var(--radius-md);
-                background: #f8f5f1;
-                border: 1px solid rgba(16, 20, 24, 0.08);
-            }
-
-            .panel-item strong {
-                font-size: 1.05rem;
-            }
-
-            .section {
-                margin-top: 72px;
-            }
-
-            .section-title {
-                font-family: "Space Grotesk", "Manrope", sans-serif;
-                font-size: 1.7rem;
-                margin: 0 0 10px;
-            }
-
-            .section-subtitle {
-                color: var(--muted);
-                margin: 0 0 28px;
-            }
-
-            .card-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-                gap: 18px;
-            }
-
-            .card {
-                background: var(--surface);
-                border-radius: var(--radius-md);
-                padding: 20px;
-                border: 1px solid var(--line);
-                box-shadow: 0 16px 30px rgba(16, 20, 24, 0.08);
-            }
-
-            .card h3 {
-                margin: 0 0 8px;
-                font-size: 1.1rem;
-            }
-
-            .card p {
-                margin: 0;
-                color: var(--muted);
-            }
-
-            .workflow {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-                gap: 16px;
-            }
-
-            .step {
-                border-radius: var(--radius-sm);
-                background: #fff;
-                border: 1px solid var(--line);
-                padding: 16px 18px;
-            }
-
-            .step span {
-                font-size: 0.85rem;
-                color: var(--accent);
-                font-weight: 600;
-            }
-
-            .metrics {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 16px;
-            }
-
-            .metric {
-                background: #0f2f2b;
-                color: #fff;
-                border-radius: var(--radius-md);
-                padding: 18px;
-            }
-
-            .metric strong {
-                font-size: 1.6rem;
-                display: block;
-            }
-
-            .cta {
-                margin-top: 80px;
-                padding: 32px;
-                background: linear-gradient(120deg, rgba(15, 107, 95, 0.1), rgba(242, 139, 45, 0.12));
-                border-radius: var(--radius-lg);
-                border: 1px solid var(--line);
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                justify-content: space-between;
-                gap: 18px;
-            }
-
-            .cta h2 {
-                margin: 0 0 8px;
-                font-size: 1.6rem;
-                font-family: "Space Grotesk", "Manrope", sans-serif;
-            }
-
-            .footer {
-                margin-top: 48px;
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: space-between;
-                gap: 12px;
-                color: var(--muted);
-                font-size: 0.9rem;
-            }
-
-            @media (max-width: 900px) {
-                .topbar {
-                    flex-direction: column;
-                    align-items: flex-start;
-                }
-
-                .actions {
-                    width: 100%;
-                    justify-content: flex-start;
-                }
-
-                .hero {
-                    grid-template-columns: 1fr;
-                }
-            }
-
-            @media (max-width: 600px) {
-                .shell {
-                    padding: 24px 18px 72px;
-                }
-
-                .topbar {
-                    padding: 14px;
-                }
-
-                .hero-panel {
-                    padding: 22px;
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="page">
-            <div class="shell">
-                <header class="topbar">
-                    <div class="brand">
-                        <div class="brand-mark">M</div>
-                        <span>Map AI Verification</span>
-                    </div>
-                    <nav class="nav">
-                        <a href="#platform">Platform</a>
-                        <a href="#workflow">Workflow</a>
-                        <a href="#capabilities">Capabilities</a>
-                        <a href="#compliance">Compliance</a>
-                        <a href="/admin/plan/cad-compliance">CAD Compliance</a>
-                    </nav>
-                    <div class="actions">
-                        <a class="btn ghost" href="#contact">Contact</a>
-                        <a class="btn primary" href="/admin/plan/cad-compliance">Start Review</a>
-                    </div>
-                </header>
-
-                <main>
-                    <section class="hero">
-                        <div>
-                            <h1>Confident zoning verification for every CAD submission.</h1>
-                            <p>
-                                Map AI Verification turns zoning, setback, and parcel rules into a real-time review
-                                experience. Upload DWG files, trace compliance signals, and export audit-ready reports in
-                                minutes.
-                            </p>
-                            <div class="hero-cta">
-                                <a class="btn primary" href="/admin/plan/cad-compliance">Run a compliance check</a>
-                                <a class="btn ghost" href="#platform">Explore platform</a>
-                            </div>
-                            <div class="hero-meta">
-                                <div class="meta-chip">Rule libraries synced</div>
-                                <div class="meta-chip">DWG to insight in seconds</div>
-                                <div class="meta-chip">Audit trail built in</div>
-                            </div>
-                        </div>
-                        <div class="hero-panel">
-                            <div class="panel-badge">Live project overview</div>
-                            <div class="panel-title">Downtown rezoning review</div>
-                            <div class="panel-grid">
-                                <div class="panel-item">
-                                    <strong>96%</strong>
-                                    <span>Compliance confidence</span>
-                                </div>
-                                <div class="panel-item">
-                                    <strong>12</strong>
-                                    <span>Critical checks flagged</span>
-                                </div>
-                                <div class="panel-item">
-                                    <strong>4 min</strong>
-                                    <span>Average turnaround</span>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="section" id="platform">
-                        <h2 class="section-title">A professional command center for plan review</h2>
-                        <p class="section-subtitle">
-                            Designed for planning teams, consultants, and reviewers who need a clean workflow from
-                            submission to sign-off.
-                        </p>
-                        <div class="card-grid">
-                            <div class="card">
-                                <h3>Unified map intelligence</h3>
-                                <p>Overlay zoning layers, parcel boundaries, and annotations without leaving the viewer.</p>
-                            </div>
-                            <div class="card">
-                                <h3>Clear issue triage</h3>
-                                <p>Instantly rank conflicts by severity and assign follow-up actions to reviewers.</p>
-                            </div>
-                            <div class="card">
-                                <h3>Traceable decisions</h3>
-                                <p>Generate compliance narratives and exportable review logs for approvals.</p>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="section" id="workflow">
-                        <h2 class="section-title">Workflow that keeps reviews on schedule</h2>
-                        <p class="section-subtitle">Move from upload to verified decision in four streamlined steps.</p>
-                        <div class="workflow">
-                            <div class="step">
-                                <span>Step 01</span>
-                                <h3>Upload</h3>
-                                <p>Drop DWG, DXF, or PDF submissions into a secure project workspace.</p>
-                            </div>
-                            <div class="step">
-                                <span>Step 02</span>
-                                <h3>Analyze</h3>
-                                <p>AI locates setbacks, height limits, and frontage rules in real time.</p>
-                            </div>
-                            <div class="step">
-                                <span>Step 03</span>
-                                <h3>Collaborate</h3>
-                                <p>Share annotations and review states with consultants and agencies.</p>
-                            </div>
-                            <div class="step">
-                                <span>Step 04</span>
-                                <h3>Deliver</h3>
-                                <p>Export compliance packets, signed approvals, and archival records.</p>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="section" id="capabilities">
-                        <h2 class="section-title">Verification capabilities built for zoning teams</h2>
-                        <p class="section-subtitle">Everything you need to confirm, explain, and defend each decision.</p>
-                        <div class="card-grid">
-                            <div class="card">
-                                <h3>Setback intelligence</h3>
-                                <p>Automate setback checks with visual overlays and ruler-grade accuracy.</p>
-                            </div>
-                            <div class="card">
-                                <h3>Layer-aware checks</h3>
-                                <p>Interpret CAD layers, labels, and callouts without manual prep work.</p>
-                            </div>
-                            <div class="card">
-                                <h3>Compliance notes</h3>
-                                <p>Convert findings into plain-language statements for permits and reports.</p>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="section" id="compliance">
-                        <h2 class="section-title">Metrics your stakeholders trust</h2>
-                        <p class="section-subtitle">Show leadership how reviews are improving with consistent evidence.</p>
-                        <div class="metrics">
-                            <div class="metric">
-                                <strong>48%</strong>
-                                <span>Faster plan turnaround</span>
-                            </div>
-                            <div class="metric">
-                                <strong>0.2m</strong>
-                                <span>Average setback variance tolerance</span>
-                            </div>
-                            <div class="metric">
-                                <strong>24/7</strong>
-                                <span>Automated rule monitoring</span>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="cta" id="contact">
-                        <div>
-                            <h2>Ready to streamline your next review?</h2>
-                            <p>Launch a CAD compliance session or connect with the team for onboarding.</p>
-                        </div>
-                        <div class="hero-cta">
-                            <a class="btn primary" href="/admin/plan/cad-compliance">Start a session</a>
-                            <a class="btn ghost" href="mailto:hello@map-ai-verification.local">Request a walkthrough</a>
-                        </div>
-                    </section>
-                </main>
-
-                <footer class="footer">
-                    <span>Map AI Verification</span>
-                    <span>Secure zoning intelligence for modern planning teams.</span>
-                </footer>
+        @media (max-width:1200px){
+            .hero-title{font-size:3.2rem}.hero-copy{font-size:1.25rem}.step-title{font-size:1.35rem}.step-text,.feature-text{font-size:1rem}.feature-title{font-size:1.3rem}
+            .brand-title{font-size:1.35rem}.brand-sub{font-size:.95rem}
+            .hero-right-wrap{min-height:410px}
+        }
+        @media (max-width:991px){
+            .hero-right-wrap{min-height:340px}.hero-build{width:52%}.hero-dashboard{width:76%}
+            .benefit-item{border-right:none;border-bottom:1px solid #b9d8d6}.benefit-item:last-child{border-bottom:none}
+        }
+    </style>
+</head>
+<body>
+<header class="topbar py-3">
+    <div class="container-main container-fluid d-flex align-items-center justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-center gap-3">
+            <div class="logo-mark"><i data-lucide="landmark"></i></div>
+            <div>
+                <div class="brand-title">Lahore Development Authority</div>
+                <div class="brand-sub">Building Better Lahore</div>
             </div>
         </div>
-    </body>
+        <nav class="d-flex align-items-center gap-4">
+            <a class="nav-link-top active" href="{{ url('/') }}">Home</a>
+            <a class="nav-link-top" href="{{ session('bp_applicant_id') ? route('public.bp.applications.create') : route('public.bp.login') }}">How It Works</a>
+            <a class="nav-link-top" href="{{ session('bp_applicant_id') ? route('public.bp.dashboard') : route('public.bp.login') }}">Track Application</a>
+            <a class="nav-link-top" href="{{ session('bp_applicant_id') ? route('public.bp.dashboard') : route('public.bp.login') }}">Help</a>
+        </nav>
+        <div class="d-flex gap-2">
+            @if(session('bp_applicant_id'))
+                <a class="btn btn-login" href="{{ route('public.bp.dashboard') }}"><i data-lucide="user"></i> Dashboard</a>
+                <form method="POST" action="{{ route('public.bp.logout') }}">@csrf<button class="btn btn-register" type="submit"><i data-lucide="log-out"></i> Logout</button></form>
+            @else
+                <a class="btn btn-login" href="{{ route('public.bp.login') }}"><i data-lucide="user"></i> Login</a>
+                <a class="btn btn-register" href="{{ route('public.bp.register') }}"><i data-lucide="user-plus"></i> Register</a>
+            @endif
+        </div>
+    </div>
+</header>
+
+<main class="hero pb-4">
+    <div class="container-main container-fluid pt-4">
+        <div class="row g-4 align-items-start">
+            <div class="col-xl-6 pt-2">
+                <span class="pill">LDA PLAN APPROVAL PORTAL</span>
+                <h1 class="hero-title mt-3 mb-3">AI-Assisted<br>Building Plan Approval</h1>
+                <p class="hero-copy mb-4">Register with your CNIC, upload building plans and required documents, get AI-powered preliminary scrutiny, and track your application through the official approval workflow.</p>
+                <div class="d-flex flex-wrap gap-3 mb-4">
+                    <a class="cta-primary text-decoration-none" href="{{ session('bp_applicant_id') ? route('public.bp.applications.create') : route('public.bp.register') }}"><i data-lucide="user-plus" class="me-2"></i>Start Application</a>
+                    <a class="cta-outline text-decoration-none" href="{{ session('bp_applicant_id') ? route('public.bp.dashboard') : route('public.bp.login') }}"><i data-lucide="user" class="me-2"></i>Applicant Login</a>
+                </div>
+                <div class="d-flex gap-4 flex-wrap mini-points">
+                    <span><i data-lucide="shield-check"></i> Secure & Official</span>
+                    <span><i data-lucide="clock-3"></i> Faster Decisions</span>
+                    <span><i data-lucide="circle-check"></i> Transparent Process</span>
+                </div>
+            </div>
+            <div class="col-xl-6">
+                <div class="hero-right-wrap">
+                    <img class="hero-build" src="{{ asset('assets/map-approval-home/04_hero_building_illustration.png') }}" alt="Building Illustration">
+                    <img class="hero-dashboard" src="{{ asset('assets/map-approval-home/05_hero_application_dashboard.png') }}" alt="Application Overview">
+                </div>
+            </div>
+        </div>
+
+        <section class="mt-3 steps-row">
+            <div class="row g-3 align-items-center">
+                @php
+                    $steps = [
+                        ['no'=>'01','title'=>'Register with CNIC','text'=>'Create your account using CNIC and secure login.','icon'=>'id-card'],
+                        ['no'=>'02','title'=>'Upload Plan & Documents','text'=>'Upload building plans, maps and required documents.','icon'=>'cloud-upload'],
+                        ['no'=>'03','title'=>'AI Validation & Report','text'=>'AI reviews your submission and generates a scrutiny report.','icon'=>'cpu'],
+                        ['no'=>'04','title'=>'Track Routing & Decision','text'=>'Track application routing and final decision in real time.','icon'=>'route'],
+                    ];
+                @endphp
+                @foreach($steps as $s)
+                    <div class="col-lg-3 col-md-6">
+                        <div class="steps-card p-3 h-100 d-flex gap-3 align-items-center">
+                            <div class="step-icon"><span class="icon-circle icon-lg"><i data-lucide="{{ $s['icon'] }}"></i></span></div>
+                            <div>
+                                <div class="step-no">{{ $s['no'] }}</div>
+                                <div class="step-title">{{ $s['title'] }}</div>
+                                <div class="step-text">{{ $s['text'] }}</div>
+                            </div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </section>
+
+        <section class="mt-4">
+            <h2 class="section-title mb-3">Powerful Features for a Smarter Approval Experience</h2>
+            @php
+                $features = [
+                    ['title'=>'CNIC-Based<br>Secure Login','text'=>'Verify your identity with CNIC for a secure and trusted experience.','icon'=>'badge-check'],
+                    ['title'=>'Document<br>Validation','text'=>'Automatic checks for mandatory documents and completeness.','icon'=>'file-check-2'],
+                    ['title'=>'CAD / Map<br>Upload','text'=>'Upload CAD drawings, maps, plans in PDF, DWG and other formats.','icon'=>'map'],
+                    ['title'=>'AI Scrutiny<br>Report','text'=>'Instant AI analysis with compliance score and detailed observations.','icon'=>'brain-circuit'],
+                    ['title'=>'QR-Linked<br>Tracking','text'=>'QR-linked reports and real-time tracking of application status.','icon'=>'qr-code'],
+                    ['title'=>'Directorate<br>Workflow','text'=>'Seamless routing to the concerned directorate for review & decision.','icon'=>'landmark'],
+                ];
+            @endphp
+            <div class="row g-3">
+                @foreach($features as $f)
+                    <div class="col-xl-2 col-md-4 col-sm-6">
+                        <div class="feature-card p-3 h-100">
+                            <span class="icon-circle icon-lg mb-2"><i data-lucide="{{ $f['icon'] }}"></i></span>
+                            <div class="feature-title mb-1">{!! $f['title'] !!}</div>
+                            <div class="feature-text">{{ $f['text'] }}</div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </section>
+
+        <section class="benefit-strip mt-3 p-3">
+            <div class="row g-0">
+                <div class="col-lg-3 benefit-item p-3 d-flex gap-3"><span class="icon-circle icon-lg"><i data-lucide="rocket"></i></span><div><div class="benefit-title">Fast Digital Submission</div><div class="benefit-text">Submit plans and documents online within minutes.</div></div></div>
+                <div class="col-lg-3 benefit-item p-3 d-flex gap-3"><span class="icon-circle icon-lg"><i data-lucide="eye"></i></span><div><div class="benefit-title">Transparent Tracking</div><div class="benefit-text">Track every step of your application with full visibility.</div></div></div>
+                <div class="col-lg-3 benefit-item p-3 d-flex gap-3"><span class="icon-circle icon-lg"><i data-lucide="sparkles"></i></span><div><div class="benefit-title">AI Preliminary Scrutiny</div><div class="benefit-text">AI-powered report helps identify issues early to save time.</div></div></div>
+                <div class="col-lg-3 p-3 d-flex gap-3"><span class="icon-circle icon-lg"><i data-lucide="lock"></i></span><div><div class="benefit-title">Secure Records</div><div class="benefit-text">All data is encrypted and stored securely with audit trail.</div></div></div>
+            </div>
+        </section>
+
+        <section class="important-strip mt-3 p-3 d-flex gap-3 align-items-start">
+            <i data-lucide="info" style="width:32px;height:32px;color:#a97819;"></i>
+            <div>
+                <div class="important-title">Important Information</div>
+                <div class="important-text">The AI-generated scrutiny report is for preliminary validation and advisory purposes only. Final approval, rejection, or objection shall remain subject to review and decision by the concerned authority/directorate.</div>
+            </div>
+        </section>
+    </div>
+</main>
+
+<footer class="footer pt-4 pb-2">
+    <div class="container-main container-fluid">
+        <div class="row g-4">
+            <div class="col-xl-3">
+                <div class="d-flex align-items-center gap-2 mb-2"><div class="logo-mark" style="width:44px;height:44px;"><i data-lucide="landmark"></i></div><div class="footer-title">Lahore Development Authority</div></div>
+                <div class="footer-sub">Official platform for building plan submission, AI scrutiny and approval workflow.</div>
+                <div class="d-flex gap-2 mt-2">
+                    <span class="social-round"><i data-lucide="facebook"></i></span>
+                    <span class="social-round"><i data-lucide="twitter"></i></span>
+                    <span class="social-round"><i data-lucide="youtube"></i></span>
+                    <span class="social-round"><i data-lucide="linkedin"></i></span>
+                </div>
+            </div>
+            <div class="col-xl-2 col-md-6">
+                <div class="footer-head">Quick Links</div>
+                <a class="footer-link" href="{{ url('/') }}">Home</a>
+                <a class="footer-link" href="{{ session('bp_applicant_id') ? route('public.bp.applications.create') : route('public.bp.login') }}">How It Works</a>
+                <a class="footer-link" href="{{ session('bp_applicant_id') ? route('public.bp.dashboard') : route('public.bp.login') }}">Track Application</a>
+                <a class="footer-link" href="{{ route('public.bp.login') }}">Help & FAQs</a>
+            </div>
+            <div class="col-xl-2 col-md-6">
+                <div class="footer-head">Resources</div>
+                <div class="footer-link">Guidelines & SOPs</div>
+                <div class="footer-link">Document Requirements</div>
+                <div class="footer-link">Fee Structure</div>
+                <div class="footer-link">Public Notices</div>
+            </div>
+            <div class="col-xl-2 col-md-6">
+                <div class="footer-head">Support</div>
+                <div class="footer-link"><i data-lucide="phone" class="me-1"></i>042-111-523-523</div>
+                <div class="footer-link"><i data-lucide="mail" class="me-1"></i>support@lda.gov.pk</div>
+                <div class="footer-link"><i data-lucide="clock-3" class="me-1"></i>Mon - Fri: 9:00 AM - 5:00 PM</div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="footer-head">Download App</div>
+                <div class="footer-mini mb-2">Coming Soon on</div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <span class="store-btn"><i data-lucide="smartphone"></i>App Store</span>
+                    <span class="store-btn"><i data-lucide="smartphone"></i>Google Play</span>
+                </div>
+            </div>
+        </div>
+        <hr class="border-light opacity-25 my-3">
+        <div class="d-flex justify-content-between flex-wrap gap-2 copyright">
+            <div>© {{ date('Y') }} Lahore Development Authority. All rights reserved.</div>
+            <div>Privacy Policy &nbsp; | &nbsp; Terms of Use &nbsp; | &nbsp; Accessibility</div>
+        </div>
+    </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>lucide.createIcons();</script>
+</body>
 </html>

@@ -417,20 +417,8 @@ class CadComplianceService
 
     private function resolveRulesPath(CadSubmission $submission): string
     {
-        $rulesetKey = (string) ($submission->ruleset_key ?: '5_marla_residential');
-
-        $map = [
-            '5_marla_residential' => base_path('rules/5MRulesJSON.json'),
-            'residential_building_approval' => base_path('rules/approval_rules_meta.json'),
-        ];
-
-        $path = $map[$rulesetKey] ?? null;
-
-        if ($path && is_file($path)) {
-            return $path;
-        }
-
-        return base_path('rules/5MRulesJSON.json');
+        $path = base_path('rules/approval_rules_meta.json');
+        return $path;
     }
 
     private function saveAnalysisReport(
@@ -903,7 +891,10 @@ class CadComplianceService
         }
 
         if ($dwg2dxf && is_file($dwg2dxf) && is_executable($dwg2dxf)) {
-            $p = new Process([$dwg2dxf, '-o', $dxfAbs, $dwgAbs]);
+            if (is_file($dxfAbs)) {
+                @unlink($dxfAbs);
+            }
+            $p = new Process([$dwg2dxf, '-y', '-o', $dxfAbs, $dwgAbs]);
             $p->setTimeout(300);
             $p->run();
 

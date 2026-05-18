@@ -106,6 +106,7 @@
     </style>
 
     @yield('header_styles')
+    @vite(['resources/js/app.js'])
 </head>
 <body>
 
@@ -172,5 +173,6 @@
 ></script>
 
 @yield('footer_scripts')
+@stack('footer_scripts_inline')
 </body>
 </html>

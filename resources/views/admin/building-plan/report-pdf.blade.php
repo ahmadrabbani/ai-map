@@ -90,7 +90,7 @@
         <thead>
         <tr>
             <th>Item</th>
-            <th>Textual Value</th>
+            <th>Provided</th>
             <th>AI/CAD Value</th>
             <th>Required</th>
             <th>Status From Text</th>
@@ -103,27 +103,136 @@
                 <td>{{ $row['label'] }}</td>
                 <td>{{ ($row['textual_value'] === null || $row['textual_value'] === '') ? '-' : $row['textual_value'] }}</td>
                 <td>{{ ($row['ai_value'] === null || $row['ai_value'] === '') ? '-' : $row['ai_value'] }}</td>
-                <td>{{ $row['operator'] && $row['required'] !== null ? $row['operator'].' '.$row['required'] : 'Reference' }}</td>
-                <td class="status {{ $row['status'] }}">{{ strtoupper(str_replace('_', ' ', $row['status'])) }}</td>
+                <td>{{ $row['operator'] && $row['required'] !== null ? $row['operator'].' '.$row['required'] : ($row['required'] ?? '-') }}</td>
+                <td class="status {{ $row['status'] }}">{{ strtoupper(str_replace('_', ' ', $row['status'] === 'pass' ? 'clear' : $row['status'])) }}</td>
                 <td>{{ $row['basis'] }}</td>
             </tr>
         @endforeach
         </tbody>
     </table>
 
+    <h2>Further Details: Room / Space Areas From CAD Text</h2>
+    <div class="card">
+        <div class="muted">
+            Parsed from CAD text overlays. Area is calculated as width x height from nearby dimension text.
+            Keys use floor prefixes: BF, GF, FF, SF, TH.
+        </div>
+        @if(!empty($roomAreaTotals))
+            <table>
+                <thead><tr><th>Floor</th><th>Detected Boxes</th><th>Total Area</th></tr></thead>
+                <tbody>
+                @foreach($roomAreaTotals as $total)
+                    <tr>
+                        <td>{{ $total['floor'] }}</td>
+                        <td>{{ $total['count'] }}</td>
+                        <td>{{ number_format((float) $total['area_sqft'], 2) }} sqft</td>
+                    </tr>
+                @endforeach
+                </tbody>
+            </table>
+        @endif
+        <table>
+            <thead>
+            <tr>
+                <th>Key</th>
+                <th>Label</th>
+                <th>Floor</th>
+                <th>Width ft</th>
+                <th>Height ft</th>
+                <th>Area sqft</th>
+                <th>Dimension Text</th>
+            </tr>
+            </thead>
+            <tbody>
+            @forelse($roomAreas as $row)
+                <tr>
+                    <td>{{ $row['key'] ?? '-' }}</td>
+                    <td>{{ $row['label'] ?? '-' }}</td>
+                    <td>{{ $row['floor'] ?? '-' }}</td>
+                    <td>{{ isset($row['width_ft']) ? number_format((float) $row['width_ft'], 2) : '-' }}</td>
+                    <td>{{ isset($row['height_ft']) ? number_format((float) $row['height_ft'], 2) : '-' }}</td>
+                    <td>{{ isset($row['area_sqft']) ? number_format((float) $row['area_sqft'], 2) : '-' }}</td>
+                    <td>{{ $row['dimension_text'] ?? '-' }}</td>
+                </tr>
+            @empty
+                <tr><td colspan="7">No room/space dimension pairs were detected from CAD text overlays.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    <h2>Structural Findings (Geometry-First)</h2>
+    <div class="card">
+        <div><strong>Extraction Confidence:</strong> {{ number_format((float) $structuralConfidence * 100, 1) }}%</div>
+        @if(!empty($structuralSummary['by_type']))
+            <div style="margin-top:6px;">
+                <strong>Detected Types:</strong>
+                @foreach($structuralSummary['by_type'] as $type => $count)
+                    <span style="margin-right:8px;">{{ strtoupper(str_replace('_', ' ', (string) $type)) }}: {{ $count }}</span>
+                @endforeach
+            </div>
+        @endif
+        <table>
+            <thead><tr><th>Type</th><th>Layer</th><th>Confidence</th><th>Reason</th></tr></thead>
+            <tbody>
+            @forelse(array_slice($structuralEntities, 0, 20) as $item)
+                <tr>
+                    <td>{{ strtoupper(str_replace('_', ' ', (string) ($item['semantic_type'] ?? '-'))) }}</td>
+                    <td>{{ $item['layer'] ?? '-' }}</td>
+                    <td>{{ number_format(((float) ($item['confidence'] ?? 0)) * 100, 1) }}%</td>
+                    <td>{{ $item['reason'] ?? '-' }}</td>
+                </tr>
+            @empty
+                <tr><td colspan="4">No structural items available.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    <h2>Structural Graph Model</h2>
+    <div class="card">
+        <div><strong>Nodes:</strong> {{ count($structuralGraphNodes ?? []) }}</div>
+        <div><strong>Edges:</strong> {{ count($structuralGraphEdges ?? []) }}</div>
+        @if(!empty($structuralGraphRelationCounts))
+            <div style="margin-top:6px;">
+                <strong>Relation Types:</strong>
+                @foreach($structuralGraphRelationCounts as $relation => $count)
+                    <span style="margin-right:8px;">{{ strtoupper(str_replace('_', ' ', (string) $relation)) }}: {{ $count }}</span>
+                @endforeach
+            </div>
+        @endif
+        <table>
+            <thead><tr><th>From</th><th>To</th><th>Relation</th><th>CAD Distance (ft)</th><th>Raw Distance</th></tr></thead>
+            <tbody>
+            @forelse(array_slice($structuralGraphEdges ?? [], 0, 30) as $edge)
+                <tr>
+                    <td>{{ $edge['from'] ?? '-' }}</td>
+                    <td>{{ $edge['to'] ?? '-' }}</td>
+                    <td>{{ strtoupper(str_replace('_', ' ', (string) ($edge['relation'] ?? '-'))) }}</td>
+                    <td>{{ $edge['distance'] ?? '-' }}{{ ($edge['distance'] ?? null) !== null ? ' ft' : '' }}</td>
+                    <td>{{ $edge['raw_distance'] ?? '-' }}</td>
+                </tr>
+            @empty
+                <tr><td colspan="5">No structural graph edges available.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+    </div>
+
     <h2>Rule-wise AI/CAD Compliance Results</h2>
     <table>
-        <thead><tr><th>Rule</th><th>Status</th><th>Required</th><th>AI/CAD Actual</th></tr></thead>
+        <thead><tr><th>Rule</th><th>Clause Reference</th><th>Status</th><th>Required</th><th>AI/CAD Actual</th></tr></thead>
         <tbody>
-        @forelse(($report?->rule_results_json ?? []) as $row)
+        @forelse(($reportRuleRows ?? []) as $row)
             <tr>
-                <td>{{ $row['id'] ?? $row['rule_code'] ?? 'N/A' }}</td>
+                <td>{{ str_replace('_', ' ', (string) ($row['id'] ?? $row['rule_code'] ?? 'N/A')) }}</td>
+                <td>{{ $row['clause_reference'] ?? 'Clause reference pending mapping' }}</td>
                 <td>{{ $row['status'] ?? (($row['pass'] ?? null) === true ? 'pass' : (($row['pass'] ?? null) === false ? 'fail' : 'needs_review')) }}</td>
                 <td>{{ $row['required'] ?? $row['required_value'] ?? '-' }}</td>
                 <td>{{ $row['measured'] ?? $row['actual'] ?? $row['actual_value'] ?? '-' }}</td>
             </tr>
         @empty
-            <tr><td colspan="4">No AI/CAD rule rows available.</td></tr>
+            <tr><td colspan="5">No AI/CAD rule rows available.</td></tr>
         @endforelse
         </tbody>
     </table>
