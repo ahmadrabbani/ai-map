@@ -1,0 +1,43 @@
+Now let's move on to the next step, logging in to the Admin Dashboard, where the officer will review the submitted application.
+
+To kick off the administrative review, head over to the AD ePermit Officer Login page. This portal is exclusively for officers who need to review submitted cases and access the technical CAD screens.
+
+Go ahead and fill in your registered officer email address.
+
+Next up, enter your password in the field below.
+
+Once your credentials are in, hit the Login to AD ePermit Desk button to access the officer dashboard.
+
+The login credentials are now ready to be entered for the admin dashboard.
+
+Once logged in, we'll move on to accessing and reviewing the submitted application to begin the official verification process.
+
+To access and review the submitted application, find the entry you need on the AD ePermit Review Dashboard and hit the Review button next to it.
+
+This opens up the full application details. Scroll down to go through everything the applicant has submitted, from property info to the uploaded documents.
+
+The application details are now open for review.
+
+Let's move on to performing site verification and adding remarks, where we'll confirm the property location on the satellite map and record official observations.
+
+To begin the site verification, hit the View Satellite Site button under the Google Satellite Site Review section.
+
+A satellite view of the property will load up, letting you visually inspect the actual site conditions against what's been declared in the application.
+
+Once you've reviewed the imagery, scroll down to the site status dropdown and pick the option that matches what you see, in this case marking the plot as vacant.
+
+In the Site remarks field, jot down your observation about the site condition for the record.
+
+Lock in your verification by clicking the Save Site Marking JSON button.
+
+Site verification is complete and remarks have been recorded.
+
+Now let's move on to consulting the AI Report for Final Review, where we'll cross-check our findings against the AI's automated scrutiny before making a decision.
+
+To dive deeper into the AI's findings, scroll back up and hit the Open Full AI Report button.
+
+This opens up the detailed report in a new tab. Take a moment to scroll through and see the textual data compared against the AI and CAD read values, along with the pass or fail status for each compliance check.
+
+Scrolling up a bit, you can review the rule-wise compliance results, giving you a clear picture of which clauses passed and which ones failed.
+
+And that wraps up the AI report review for the final decision. You've now seen the full LDA AI verification process from the applicant's submission all the way to the admin's approval. Hope this gave you a clear picture of how it all fits together.

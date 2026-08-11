@@ -62,7 +62,7 @@ class PublicBuildingPlanChatService
         $prompt = [
             [
                 'role' => 'system',
-                'content' => 'You are Building Plan AI Assistant. Use application facts and AI report only. Keep response practical and concise. Never claim final legal approval. Always mention this is preliminary and authority decision is final.',
+                'content' => 'You are Building Plan AI Assistant. Use application facts and AI report only. Keep response practical and concise. Never claim final legal approval. Always mention this is preliminary and authority decision is final. If cad_confidence_assessment is present, explain whether measurements are verified, calculated, or estimated, and lower certainty when marked CAD layers or textual dimensions are missing. If dxf_pattern_profile is present, use the recognized DXF pattern family and strength to explain whether the case is text-table driven, geometry dominant, or only partially recognized.',
             ],
             ...$history,
             [
@@ -162,7 +162,7 @@ class PublicBuildingPlanChatService
                 ],
                 'systemInstruction' => [
                     'parts' => [[
-                        'text' => 'You are Building Plan AI Assistant. Use application facts and AI report only. Keep response practical and concise. Never claim final legal approval. Always mention this is preliminary and authority decision is final.',
+                        'text' => 'You are Building Plan AI Assistant. Use application facts and AI report only. Keep response practical and concise. Never claim final legal approval. Always mention this is preliminary and authority decision is final. If cad_confidence_assessment is present, explain whether measurements are verified, calculated, or estimated, and lower certainty when marked CAD layers or textual dimensions are missing. If dxf_pattern_profile is present, use the recognized DXF pattern family and strength to explain whether the case is text-table driven, geometry dominant, or only partially recognized.',
                     ]],
                 ],
                 'generationConfig' => [
@@ -194,8 +194,11 @@ class PublicBuildingPlanChatService
         $review = (int) data_get($report, 'summary.needs_review_count', 0);
         $issues = (int) data_get($report, 'summary.issue_count', 0);
 
+        $patternFamily = (string) data_get($report, 'dxf_pattern_profile.pattern_family', 'generic_dxf');
+        $patternStrength = number_format((float) data_get($report, 'dxf_pattern_profile.pattern_strength', 0), 2);
+
         return "Preliminary guidance for {$application->application_no}: AI status {$application->ai_status}, confidence " . number_format($confidence, 2) . "%, Clear {$clear}, Under Review {$review}, Issues {$issues}. "
-            . "Key checks are based on text layers and AI report summary. For human review, use AD ePermit Live during office hours. "
+            . "DXF pattern {$patternFamily} ({$patternStrength}). Key checks are based on text layers and AI report summary. For human review, use AD ePermit Live during office hours. "
             . "Final approval remains with authority.";
     }
 
@@ -203,10 +206,25 @@ class PublicBuildingPlanChatService
     {
         $rules = array_values(array_slice((array) data_get($report, 'rule_results', data_get($report, 'checks', [])), 0, 20));
         $warnings = array_values(array_slice((array) data_get($report, 'warnings', []), 0, 12));
+        $cadConfidence = (array) data_get($report, 'cad_confidence_assessment', []);
+        $patternProfile = (array) data_get($report, 'dxf_pattern_profile', []);
 
         return [
             'recommendation' => data_get($report, 'recommendation', data_get($report, 'summary.recommendation')),
             'confidence' => $this->extractConfidencePercent($report),
+            'cad_confidence_assessment' => [
+                'score' => (float) data_get($cadConfidence, 'confidence_score', 0),
+                'level' => (string) data_get($cadConfidence, 'confidence_level', 'unknown'),
+                'missing_layers' => (array) data_get($cadConfidence, 'missing_layers', []),
+                'available_layers' => (array) data_get($cadConfidence, 'available_layers', []),
+                'fallback_method_used' => (string) data_get($cadConfidence, 'fallback_method_used', 'unknown'),
+                'dimension_source' => (string) data_get($cadConfidence, 'dimension_source', 'unknown'),
+                'warnings' => (array) data_get($cadConfidence, 'warnings', []),
+            ],
+            'dxf_pattern_profile' => [
+                'family' => (string) data_get($patternProfile, 'pattern_family', 'generic_dxf'),
+                'strength' => (float) data_get($patternProfile, 'pattern_strength', 0),
+            ],
             'clear_count' => (int) data_get($report, 'summary.clear_count', 0),
             'needs_review_count' => (int) data_get($report, 'summary.needs_review_count', 0),
             'issue_count' => (int) data_get($report, 'summary.issue_count', 0),

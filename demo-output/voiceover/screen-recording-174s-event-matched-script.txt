@@ -1,0 +1,18 @@
+The recording starts at the applicant login screen. Here the applicant enters the CNIC and password, then signs in to continue the building plan submission.
+
+After login, the applicant opens a new building plan submission. The wizard begins with plan upload. The file picker is used to select the drawing file, so the system can read the CAD or PDF plan before the rest of the form is completed.
+
+Once the plan is attached, the wizard moves into property information. The user opens the Geo Verification Panel. At this point the system is checking the address and map signal for the plot. The important point here is that location verification is not a separate manual note; it becomes part of the application evidence.
+
+The flow then reaches the final AI Scrutiny step. The screen shows the plan file, plot number, scheme and block, applicant details, CNIC, contact number, and a matched property signal. The progress bar shows the system reading the plan file before generating the report.
+
+Next, the AI scrutiny report is visible. This is where the process becomes easier to audit. The table shows each rule, the required value, the system-calculated value, any text or OCR read value, and the observation. Passed items, failed items, warnings, and manual review items are all shown in one place.
+
+As the report scrolls further, the screen shows deeper CAD evidence, including mapped layers and structural graph data. This supports the review team by showing how the system connected CAD entities, labels, and measurements instead of only giving a final pass or fail result.
+
+The recording then moves to the AD ePermit review screen. The officer reviews site information through the satellite section. The map, coordinates, site status, and remarks are captured together. This makes the site marking part of the official review trail.
+
+Below that, the officer reaches the decision panel. The reviewer can mark the case under review, add remarks, and prepare a push to DFPS or the internal system. The status history records the application movement from submission to AD ePermit review.
+
+At the end, approved push remarks are entered and the history remains visible. This final section shows the purpose of the workflow: applicant submission, AI scrutiny, officer verification, decision tracking, and integration readiness in one auditable process.
+

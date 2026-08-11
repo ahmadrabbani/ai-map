@@ -41,6 +41,14 @@
     <script>window.addEventListener('load', () => setTimeout(() => window.print(), 400));</script>
 @endif
 <div class="sheet">
+    @php
+        $cadConfidence = is_array(data_get($report, 'analysis_json.cad_confidence_assessment'))
+            ? data_get($report, 'analysis_json.cad_confidence_assessment')
+            : [];
+        $dxfPatternProfile = is_array(data_get($report, 'analysis_json.dxf_pattern_profile'))
+            ? data_get($report, 'analysis_json.dxf_pattern_profile')
+            : [];
+    @endphp
     <div class="header">
         <div class="header-left">
             <div class="badge">{{ $textualRecommendation }}</div>
@@ -73,9 +81,67 @@
                 <div><strong>AI Status:</strong> {{ $report?->analysis_status ?: '-' }}</div>
                 <div><strong>AI Recommendation:</strong> {{ $report?->ai_recommendation ?: '-' }}</div>
                 <div><strong>AI Confidence:</strong> {{ $report?->ai_confidence_score ?? 0 }}%</div>
+                <div><strong>CAD Confidence:</strong> {{ number_format((float) data_get($cadConfidence, 'confidence_score', 0), 2) }}% ({{ strtoupper((string) data_get($cadConfidence, 'confidence_level', 'unknown')) }})</div>
+                <div><strong>DXF Pattern:</strong> {{ data_get($dxfPatternProfile, 'pattern_family', 'generic_dxf') }} ({{ number_format((float) data_get($dxfPatternProfile, 'pattern_strength', 0), 2) }})</div>
+                <div><strong>Dimension Source:</strong> {{ data_get($cadConfidence, 'dimension_source', 'unknown') }}</div>
+                <div><strong>Fallback Method:</strong> {{ data_get($cadConfidence, 'fallback_method_used', 'unknown') }}</div>
+                <div><strong>Missing Layers:</strong> {{ implode(', ', (array) data_get($cadConfidence, 'missing_layers', [])) ?: '-' }}</div>
+                @if(!empty(data_get($cadConfidence, 'warnings', [])))
+                    <div><strong>Warnings:</strong></div>
+                    <ul style="margin-top:4px; margin-bottom:0;">
+                        @foreach((array) data_get($cadConfidence, 'warnings', []) as $warning)
+                            <li>{{ $warning }}</li>
+                        @endforeach
+                    </ul>
+                @endif
                 <div><strong>Textual Recommendation:</strong> {{ $textualRecommendation }}</div>
             </div>
         </div>
+    </div>
+
+    @php
+        $adDecisionRaw = (string) ($application->ad_epermit_decision ?? '');
+        $adRemarks = trim((string) ($application->ad_epermit_remarks ?? ''));
+        $normalizeDecision = static function (string $value): string {
+            $value = strtolower(trim($value));
+            return match (true) {
+                in_array($value, ['approve', 'approved', 'pass', 'passed', 'approval'], true) => 'approve',
+                in_array($value, ['reject', 'rejected', 'fail', 'failed', 'objection'], true) => 'reject',
+                in_array($value, ['observation', 'needs review', 'needs expert review', 'needs_expert_review', 'review'], true) => 'observation',
+                default => $value,
+            };
+        };
+        $aiDecision = $normalizeDecision((string) ($report?->ai_recommendation ?: $textualRecommendation));
+        $adDecision = $normalizeDecision($adDecisionRaw);
+        $comparisonNote = 'AI and AD comparison not available yet.';
+        if ($aiDecision !== '' && $adDecision !== '') {
+            $comparisonNote = $aiDecision === $adDecision
+                ? 'AI and AD both agree.'
+                : ($aiDecision === 'approve' && $adDecision === 'observation'
+                    ? 'AI recommends approval but AD marked observation.'
+                    : ($aiDecision === 'reject' && $adDecision === 'approve'
+                        ? 'AI found a violation but AD recommended approval.'
+                        : 'AI and AD decisions differ.'));
+        }
+    @endphp
+
+    <div class="card">
+        <h2>AI vs AD ePermit Recommendation</h2>
+        <table>
+            <thead><tr><th>AI Recommendation</th><th>AD Recommendation</th><th>Comparison</th><th>Confidence</th></tr></thead>
+            <tbody>
+            <tr>
+                <td>{{ $report?->ai_recommendation ?: $textualRecommendation }}</td>
+                <td>{{ $adDecisionRaw !== '' ? ucfirst(str_replace('_', ' ', $adDecisionRaw)) : 'AD comments not submitted yet' }}</td>
+                <td>{{ $comparisonNote }}</td>
+                <td>{{ number_format((float) data_get($cadConfidence, 'confidence_score', 0), 2) }}% / {{ strtoupper((string) data_get($cadConfidence, 'confidence_level', 'unknown')) }}</td>
+            </tr>
+            </tbody>
+        </table>
+        <div style="margin-top:8px;"><strong>AD Comments:</strong> {{ $adRemarks !== '' ? $adRemarks : 'AD comments not submitted yet' }}</div>
+        @if($application->reviewed_at)
+            <div style="margin-top:4px;"><strong>Decision Date/Time:</strong> {{ $application->reviewed_at->format('Y-m-d H:i') }}</div>
+        @endif
     </div>
 
     <h2>Textual Data vs AI/CAD Read Values</h2>
@@ -114,7 +180,8 @@
     <h2>Further Details: Room / Space Areas From CAD Text</h2>
     <div class="card">
         <div class="muted">
-            Parsed from CAD text overlays. Area is calculated as width x height from nearby dimension text.
+            Parsed from CAD text overlays. The matched category can come from the visible text or the CAD layer hint.
+            Area is calculated as width x height from nearby dimension text.
             Keys use floor prefixes: BF, GF, FF, SF, TH.
         </div>
         @if(!empty($roomAreaTotals))
@@ -135,11 +202,12 @@
             <thead>
             <tr>
                 <th>Key</th>
-                <th>Label</th>
+                <th>Matched Category</th>
+                <th>Layer Hint</th>
                 <th>Floor</th>
                 <th>Width ft</th>
                 <th>Height ft</th>
-                <th>Area sqft</th>
+                <th>Calculated Area sqft</th>
                 <th>Dimension Text</th>
             </tr>
             </thead>
@@ -147,7 +215,8 @@
             @forelse($roomAreas as $row)
                 <tr>
                     <td>{{ $row['key'] ?? '-' }}</td>
-                    <td>{{ $row['label'] ?? '-' }}</td>
+                    <td>{{ $row['category'] ?? '-' }}</td>
+                    <td>{{ $row['layer_hint'] ?? '-' }}</td>
                     <td>{{ $row['floor'] ?? '-' }}</td>
                     <td>{{ isset($row['width_ft']) ? number_format((float) $row['width_ft'], 2) : '-' }}</td>
                     <td>{{ isset($row['height_ft']) ? number_format((float) $row['height_ft'], 2) : '-' }}</td>
@@ -155,7 +224,7 @@
                     <td>{{ $row['dimension_text'] ?? '-' }}</td>
                 </tr>
             @empty
-                <tr><td colspan="7">No room/space dimension pairs were detected from CAD text overlays.</td></tr>
+                <tr><td colspan="8">No room/space dimension pairs were detected from CAD text overlays.</td></tr>
             @endforelse
             </tbody>
         </table>

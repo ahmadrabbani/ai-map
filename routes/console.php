@@ -3,7 +3,9 @@
 use App\Services\Ml\ImageryDatasetService;
 use App\Models\BpImageryLabel;
 use App\Models\CadLabelMapping;
+use App\Models\PublicBuildingPlanApplication;
 use App\Services\LayerAliasService;
+use App\Services\MapApproval\DxfPatternTrainingService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
@@ -152,3 +154,33 @@ Artisan::command('cad:rebuild-layer-aliases {--limit=0}', function (LayerAliasSe
     $this->info("Layer aliases rebuilt from {$count} mappings.");
     return 0;
 })->purpose('Rebuild layer aliases from expert-confirmed CAD label mappings');
+
+Artisan::command('dxf-pattern:backfill-training {--limit=0}', function (DxfPatternTrainingService $trainingService) {
+    $query = PublicBuildingPlanApplication::query()
+        ->whereNotNull('ad_epermit_decision')
+        ->whereNotNull('legacy_bp_application_id')
+        ->orderBy('id');
+
+    $limit = max(0, (int) $this->option('limit'));
+    if ($limit > 0) {
+        $query->limit($limit);
+    }
+
+    $captured = 0;
+    $skipped = 0;
+    foreach ($query->get() as $application) {
+        $trainingService->capture($application);
+        $after = \App\Models\DxfPatternTrainingExample::query()
+            ->where('building_plan_application_id', $application->id)
+            ->exists();
+
+        if ($after) {
+            $captured++;
+        } else {
+            $skipped++;
+        }
+    }
+
+    $this->info("DXF pattern training backfill completed. Captured: {$captured}. Skipped: {$skipped}.");
+    return 0;
+})->purpose('Backfill DXF pattern training examples from finalized AD ePermit cases');

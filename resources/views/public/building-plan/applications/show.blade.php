@@ -1,6 +1,16 @@
 @extends('public.building-plan.layout')
 @section('title', 'Application Detail')
 @section('content')
+@if(($unreadAdEpermitMessages ?? 0) > 0)
+<div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <strong>AD ePermit sent you {{ $unreadAdEpermitMessages }} new {{ \Illuminate\Support\Str::plural('message', $unreadAdEpermitMessages) }}.</strong>
+        Open the live chat to read and reply.
+    </div>
+    <button class="btn btn-sm btn-warning fw-semibold" type="button" data-open-ad-epermit-chat>Open AD ePermit Chat</button>
+</div>
+@endif
+
 <div class="card mb-3">
     <div class="card-header fw-semibold">Application Detail</div>
     <div class="card-body row g-3">

@@ -16,6 +16,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\View\View;
 
@@ -33,7 +36,16 @@ class PublicBuildingPlanPortalController extends Controller
     public function dashboard(Request $request): View
     {
         $applicant = $this->currentApplicant($request);
-        $applications = PublicBuildingPlanApplication::where('user_id', $applicant->id)->latest('id')->paginate(10);
+        $applications = PublicBuildingPlanApplication::where('user_id', $applicant->id)
+            ->withCount([
+                'chatMessages as unread_ad_epermit_messages_count' => function ($query) {
+                    $query->where('role', 'ad_epermit')
+                        ->where('context_json->channel', 'ad_epermit')
+                        ->whereNull('read_by_applicant_at');
+                },
+            ])
+            ->latest('id')
+            ->paginate(10);
 
         return view('public.building-plan.dashboard', compact('applicant', 'applications'));
     }
@@ -186,13 +198,172 @@ class PublicBuildingPlanPortalController extends Controller
             ->with('status', 'Application submitted and scrutiny workflow started.');
     }
 
+    public function precheck(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'plan_file' => ['required', 'file', 'extensions:dwg,dxf,cad,pdf', 'max:51200'],
+        ]);
+
+        $file = $request->file('plan_file');
+        $tempDir = 'uploads/public-building-plan/precheck/' . now()->format('Y/m/d') . '/' . Str::uuid();
+        $storedPath = $file->store($tempDir, 'local');
+
+        $tempApplication = null;
+        $tempSubmission = null;
+        $tempDrawingId = null;
+        try {
+            $token = (string) Str::uuid();
+            $tempApplication = BpApplication::create([
+                'application_number' => 'PRE-' . strtoupper(Str::random(10)),
+                'status' => 'AI Analysis In Progress',
+                'applicant_name' => 'Precheck',
+                'uploaded_file_name' => $file->getClientOriginalName(),
+                'uploaded_file_path' => $storedPath,
+                'uploaded_file_type' => strtolower((string) $file->getClientOriginalExtension()),
+                'uploaded_file_size' => $file->getSize(),
+                'qr_token' => $token,
+                'verification_url' => url('/building-plan-ai/applications/precheck/' . $token),
+                'qr_code_url' => null,
+            ]);
+
+            $uploadedFile = new UploadedFile(
+                Storage::disk('local')->path($storedPath),
+                $file->getClientOriginalName(),
+                $file->getMimeType(),
+                null,
+                true
+            );
+
+            $tempSubmission = $this->aiMapAnalysisService->prepareCadSubmission($tempApplication, $uploadedFile, $storedPath);
+            $tempApplication->cad_submission_id = $tempSubmission->id;
+            $tempApplication->save();
+
+            $analysis = $this->aiMapAnalysisService->run($tempApplication->fresh('cadSubmission'));
+            $tempDrawingId = (int) data_get($analysis, 'map_drawing_id', 0);
+            $previewConfidence = $this->previewConfidenceScore($analysis, $file);
+            $confidenceSource = $previewConfidence['source'];
+            $confidenceScore = $previewConfidence['score'];
+            $confidenceNotes = $previewConfidence['notes'];
+            $analysisConfidence = $this->analysisConfidenceScore($analysis);
+
+            return response()->json([
+                'ok' => true,
+                'status' => (string) ($analysis['status'] ?? 'needs_expert_review'),
+                'recommendation' => (string) ($analysis['recommendation'] ?? 'Needs Expert Review'),
+                'confidence_score' => $confidenceScore,
+                'analysis_confidence_score' => $analysisConfidence,
+                'confidence_source' => $confidenceSource,
+                'cad_confidence_assessment' => data_get($analysis, 'analysis_json.cad_confidence_assessment', data_get($analysis, 'cad_confidence_assessment', [])),
+                'dxf_pattern_profile' => data_get($analysis, 'analysis_json.dxf_pattern_profile', data_get($analysis, 'dxf_pattern_profile', [])),
+                'warnings' => array_values((array) ($analysis['warnings'] ?? [])),
+                'notes' => $confidenceNotes,
+                'preview_note' => 'This is a server-side preview based on the uploaded plan file. It is not the final application record.',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'status' => 'needs_review',
+                'recommendation' => 'Needs Review',
+                'confidence_score' => 0,
+                'warnings' => ['Precheck analysis failed: ' . $e->getMessage()],
+            ], 422);
+        } finally {
+            if ($tempDrawingId > 0) {
+                MapDrawing::where('id', $tempDrawingId)->delete();
+            }
+            if ($tempSubmission) {
+                $tempSubmission->delete();
+            }
+            if ($tempApplication) {
+                $tempApplication->delete();
+            }
+            if ($storedPath && Storage::disk('local')->exists($storedPath)) {
+                Storage::disk('local')->delete($storedPath);
+            }
+        }
+    }
+
+    private function previewConfidenceScore(array $analysis, \Illuminate\Http\UploadedFile $file): array
+    {
+        $candidates = [
+            'cad_confidence_assessment.final_confidence_score' => data_get($analysis, 'cad_confidence_assessment.final_confidence_score'),
+            'cad_confidence_assessment.confidence_score' => data_get($analysis, 'cad_confidence_assessment.confidence_score'),
+            'analysis_json.cad_confidence_assessment.final_confidence_score' => data_get($analysis, 'analysis_json.cad_confidence_assessment.final_confidence_score'),
+            'analysis_json.cad_confidence_assessment.confidence_score' => data_get($analysis, 'analysis_json.cad_confidence_assessment.confidence_score'),
+            'analysis.confidence_score' => data_get($analysis, 'confidence_score'),
+            'analysis_json.confidence_score' => data_get($analysis, 'analysis_json.confidence_score'),
+        ];
+
+        foreach ($candidates as $source => $value) {
+            if (! is_numeric($value)) {
+                continue;
+            }
+            return [
+                'score' => round((float) $value, 2),
+                'source' => $source,
+                'notes' => ['Server analysis score used.'],
+            ];
+        }
+
+        $local = $this->localPreviewConfidence($file);
+
+        return [
+            'score' => $local['confidence'],
+            'source' => 'local_heuristic',
+            'notes' => ['Server analysis returned no usable score, so the local heuristic was used as fallback.'],
+        ];
+    }
+
+    private function analysisConfidenceScore(array $analysis): ?float
+    {
+        $candidates = [
+            data_get($analysis, 'analysis_json.confidence_score'),
+            data_get($analysis, 'confidence_score'),
+        ];
+
+        foreach ($candidates as $value) {
+            if (is_numeric($value)) {
+                return round((float) $value, 2);
+            }
+        }
+
+        return null;
+    }
+
+    private function localPreviewConfidence(\Illuminate\Http\UploadedFile $file): array
+    {
+        $ext = strtolower((string) $file->getClientOriginalExtension());
+        $sizeMb = $file->getSize() / (1024 * 1024);
+        $validExt = in_array($ext, ['dwg', 'dxf', 'cad', 'pdf'], true);
+        $confidence = $validExt ? 84 : 40;
+
+        if ($sizeMb <= 20) {
+            $confidence += 8;
+        }
+        if ($sizeMb > 45) {
+            $confidence -= 10;
+        }
+        if (in_array($ext, ['dwg', 'dxf'], true)) {
+            $confidence += 4;
+        }
+
+        return [
+            'confidence' => max(0, min(99, round($confidence))),
+        ];
+    }
+
     public function show(Request $request, int $id): View
     {
         $applicant = $this->currentApplicant($request);
         $application = PublicBuildingPlanApplication::with('documents')->findOrFail($id);
         $this->authorizeOwnership($application, $applicant);
+        $unreadAdEpermitMessages = (int) $application->chatMessages()
+            ->where('role', 'ad_epermit')
+            ->where('context_json->channel', 'ad_epermit')
+            ->whereNull('read_by_applicant_at')
+            ->count();
 
-        return view('public.building-plan.applications.show', compact('application', 'applicant'));
+        return view('public.building-plan.applications.show', compact('application', 'applicant', 'unreadAdEpermitMessages'));
     }
 
     public function report(Request $request, int $id): View
@@ -218,6 +389,9 @@ class PublicBuildingPlanPortalController extends Controller
             'application_no' => $application->application_no,
             'status' => $application->status,
             'ai_status' => $application->ai_status,
+            'ad_epermit_decision' => $application->ad_epermit_decision,
+            'ad_epermit_remarks' => $application->ad_epermit_remarks,
+            'reviewed_at' => optional($application->reviewed_at)->toISOString(),
             'report' => $application->ai_report_json,
             'disclaimer' => 'This AI-based scrutiny report is generated to assist preliminary validation of building plan submissions. Final approval, rejection, or objection shall remain subject to review and decision by the concerned authority/directorate.',
         ];

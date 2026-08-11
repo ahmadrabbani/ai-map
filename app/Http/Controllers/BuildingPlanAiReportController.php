@@ -62,6 +62,7 @@ class BuildingPlanAiReportController extends Controller
         $report = $application->aiReport;
         $metrics = (array) data_get($application->layer_table_json, 'measurement_metrics', []);
         $plot = (array) ($application->plot_data_json ?? []);
+        $patternProfile = [];
         $roomAreas = [];
 
         if ($application->map_drawing_id) {
@@ -73,6 +74,9 @@ class BuildingPlanAiReportController extends Controller
                 $meta = is_array($drawing->metadata_json) ? $drawing->metadata_json : [];
                 $metrics = array_replace($metrics, (array) data_get($meta, 'cad_text_measurement_metrics', []));
                 $plot = array_replace($plot, (array) data_get($meta, 'cad_text_plot', []));
+                $patternProfile = is_array(data_get($meta, 'dxf_pattern_profile'))
+                    ? (array) data_get($meta, 'dxf_pattern_profile')
+                    : [];
                 $roomAreas = is_array(data_get($meta, 'cad_text_room_areas'))
                     ? (array) data_get($meta, 'cad_text_room_areas')
                     : [];
@@ -165,6 +169,10 @@ class BuildingPlanAiReportController extends Controller
         } elseif ($recommendation !== 'Needs Expert Review') {
             $findings[] = 'Textual table checks available in the uploaded drawing are within configured limits.';
         }
+        if (! empty($patternProfile)) {
+            $findings[] = 'DXF pattern recognized as ' . (string) data_get($patternProfile, 'pattern_family', 'generic_dxf')
+                . ' with strength ' . number_format((float) data_get($patternProfile, 'pattern_strength', 0), 2) . '.';
+        }
 
         return [
             'rows' => $rows,
@@ -172,6 +180,7 @@ class BuildingPlanAiReportController extends Controller
             'findings' => $findings,
             'roomAreas' => $roomAreas,
             'roomAreaTotals' => $this->roomAreaTotals($roomAreas),
+            'patternProfile' => $patternProfile,
         ];
     }
 
@@ -215,6 +224,7 @@ class BuildingPlanAiReportController extends Controller
         $structuralGraph = (array) data_get($structural, 'graph', []);
         $graphNodes = is_array(data_get($structuralGraph, 'nodes')) ? data_get($structuralGraph, 'nodes') : [];
         $graphEdges = is_array(data_get($structuralGraph, 'edges')) ? data_get($structuralGraph, 'edges') : [];
+        $patternProfile = (array) data_get($analysisJson, 'dxf_pattern_profile', []);
         $graphRelationCounts = collect($graphEdges)
             ->groupBy(fn ($edge) => (string) data_get($edge, 'relation', 'unknown'))
             ->map(fn ($items) => count($items))
@@ -238,6 +248,7 @@ class BuildingPlanAiReportController extends Controller
             'textualFindings' => $comparison['findings'],
             'roomAreas' => $comparison['roomAreas'],
             'roomAreaTotals' => $comparison['roomAreaTotals'],
+            'dxfPatternProfile' => $comparison['patternProfile'] ?: $patternProfile,
             'structuralSummary' => $structuralSummary,
             'structuralEntities' => $structuralEntities,
             'structuralConfidence' => $structuralConfidence,

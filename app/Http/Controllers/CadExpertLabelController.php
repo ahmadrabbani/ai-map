@@ -17,6 +17,7 @@ use Illuminate\Support\Collection;
 use App\Services\CadApprovalRuleService;
 use App\Services\MapApproval\GeometryCalculationService;
 use App\Services\MapApproval\MapApprovalReportService;
+use App\Services\MapApproval\DxfPatternTrainingService;
 use App\Services\MapApproval\RuleValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -27,6 +28,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CadExpertLabelController extends Controller
 {
+    public function __construct(
+        private readonly DxfPatternTrainingService $dxfPatternTrainingService,
+    ) {
+    }
+
     public function edit(Request $request, $id, CadApprovalRuleService $ruleService)
     {
         if (! $request->boolean('legacy')) {
@@ -96,6 +102,7 @@ class CadExpertLabelController extends Controller
             'plot_entity_handle' => 'nullable|string|max:255',
             'building_entity_handle' => 'nullable|string|max:255',
             'floor_handles_json' => 'nullable|string',
+            'floor_templates_json' => 'nullable|string',
             'front_side' => 'required|in:auto,north,south,east,west',
             'notes' => 'nullable|string',
             'official_layer_map' => 'nullable|array',
@@ -105,7 +112,12 @@ class CadExpertLabelController extends Controller
 
         $officialLayerMap = collect($request->input('official_layer_map', []))
             ->filter(fn ($value) => is_string($value) && trim($value) !== '')
-            ->map(fn ($value) => trim($value))
+            ->map(function ($value) {
+                $value = trim($value);
+                $layers = $this->splitLayerGroupValue($value);
+
+                return count($layers) > 1 ? $layers : $value;
+            })
             ->all();
 
         $floorHandles = null;
@@ -113,6 +125,14 @@ class CadExpertLabelController extends Controller
             $floorHandles = json_decode($data['floor_handles_json'], true);
             if (!is_array($floorHandles)) {
                 return back()->withErrors(['floor_handles_json' => 'Floor handles JSON must be a valid JSON object or array.'])->withInput();
+            }
+        }
+
+        $floorTemplates = null;
+        if (!empty($data['floor_templates_json'])) {
+            $floorTemplates = json_decode($data['floor_templates_json'], true);
+            if (!is_array($floorTemplates)) {
+                return back()->withErrors(['floor_templates_json' => 'Floor templates JSON must be a valid JSON object or array.'])->withInput();
             }
         }
 
@@ -133,12 +153,21 @@ class CadExpertLabelController extends Controller
         $data['labeled_by'] = optional($request->user())->email ?? optional($request->user())->name ?? null;
         $label->fill($data)->save();
         $this->syncTrainingLabel($submission, $label);
+        $this->dxfPatternTrainingService->captureExpertLabel($submission, $label);
 
         if ($floorHandles !== null) {
             $training = CadTrainingLabel::firstOrNew([
                 'cad_submission_id' => $submission->id,
             ]);
             $training->floor_handles = $floorHandles;
+            $training->save();
+        }
+
+        if ($floorTemplates !== null) {
+            $training = CadTrainingLabel::firstOrNew([
+                'cad_submission_id' => $submission->id,
+            ]);
+            $training->floor_templates = $floorTemplates;
             $training->save();
         }
 
@@ -1266,6 +1295,19 @@ PROMPT;
             ];
         }
 
+        if (empty($training->floor_templates) && ! empty($label->layer_map_json)) {
+            $decoded = json_decode($label->layer_map_json, true);
+            if (is_array($decoded)) {
+                $training->floor_templates = [
+                    'ground_floor' => [
+                        'layer_map' => $decoded,
+                        'layer_names' => $this->extractLayerNamesFromMap($decoded),
+                        'captured_from' => 'label_map',
+                    ],
+                ];
+            }
+        }
+
         $training->save();
     }
 
@@ -1298,6 +1340,39 @@ PROMPT;
         }
 
         return $layerMap;
+    }
+
+    private function splitLayerGroupValue(string $value): array
+    {
+        $parts = preg_split('/\s*(?:\||,|;|\n)\s*/', $value) ?: [];
+        return array_values(array_filter(array_map('trim', $parts), fn ($item) => $item !== ''));
+    }
+
+    private function extractLayerNamesFromMap(array $layerMap): array
+    {
+        $names = [];
+
+        foreach ($layerMap as $value) {
+            if (is_string($value)) {
+                foreach ($this->splitLayerGroupValue($value) as $part) {
+                    $names[] = $part;
+                }
+                continue;
+            }
+
+            if (is_array($value)) {
+                foreach ($value as $item) {
+                    if (! is_string($item)) {
+                        continue;
+                    }
+                    foreach ($this->splitLayerGroupValue($item) as $part) {
+                        $names[] = $part;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter(array_map('trim', $names))));
     }
 
     private function normalizeFrontSideForTraining(?string $frontSide): ?string
@@ -1395,6 +1470,15 @@ PROMPT;
             }
         }
 
+        foreach ($map as $key => $value) {
+            if (is_string($value)) {
+                $layers = $this->splitLayerGroupValue($value);
+                if (count($layers) > 1) {
+                    $map[$key] = $layers;
+                }
+            }
+        }
+
         if (! empty($label->plot_layer) && empty($map['plot_boundary'])) {
             $map['plot_boundary'] = $label->plot_layer;
         }
@@ -1418,7 +1502,17 @@ PROMPT;
     {
         foreach ($preferredTags as $tag) {
             if (! empty($layerMap[$tag])) {
-                return $layerMap[$tag];
+                $value = $layerMap[$tag];
+                if (is_array($value)) {
+                    foreach ($value as $candidate) {
+                        if (is_string($candidate) && trim($candidate) !== '') {
+                            return trim($candidate);
+                        }
+                    }
+                    continue;
+                }
+
+                return is_string($value) ? trim($value) : null;
             }
         }
 
@@ -1904,13 +1998,26 @@ PROMPT;
                     }
                 }
 
-                // Trust official CAD layer row names as a fallback. This protects
-                // review status from stale/corrupt dropdown tags such as every
-                // row being saved as "plot_boundary".
-                $layerName = is_array($row) ? trim((string) ($row['layer'] ?? $layerNameOrTag)) : (string) $row;
-                $layerCanonical = $this->canonicalLabelKey($layerName, $layerDefinitions);
-                if ($layerCanonical) {
-                    $mapped[$layerCanonical] = true;
+                $layerNames = [];
+                if (is_array($row)) {
+                    $rawLayer = $row['layer'] ?? $layerNameOrTag;
+                    $layerNames = is_array($rawLayer) ? $rawLayer : $this->splitLayerGroupValue((string) $rawLayer);
+                    if (empty($layerNames) && is_string($rawLayer) && trim($rawLayer) !== '') {
+                        $layerNames = [trim($rawLayer)];
+                    }
+                } elseif (is_string($row) && trim($row) !== '') {
+                    $layerNames = $this->splitLayerGroupValue((string) $row);
+                    if (empty($layerNames)) {
+                        $layerNames = [trim((string) $row)];
+                    }
+                }
+
+                // Trust all official CAD layer names in the group as a fallback.
+                foreach ($layerNames as $layerName) {
+                    $layerCanonical = $this->canonicalLabelKey((string) $layerName, $layerDefinitions);
+                    if ($layerCanonical) {
+                        $mapped[$layerCanonical] = true;
+                    }
                 }
             }
         }

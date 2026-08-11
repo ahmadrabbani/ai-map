@@ -1,0 +1,11 @@
+1. AI-Assisted Building Plan Approval: Digital submission, CAD compliance checks, satellite review, and AD ePermit decision support in one workflow.
+
+2. The Operational Problem: Manual checks are slow, inconsistent, and hard to audit across CAD drawings, documents, and site evidence.
+
+3. Applicant Digital Submission: Citizens register with CNIC, upload plans and required documents, select the plot location, and receive transparent tracking.
+
+4. AI Scrutiny and CAD Compliance: The system reads DWG/DXF drawings, detects plot and building footprints, and evaluates planning rules.
+
+5. AD ePermit Review Dashboard: Officers compare AI recommendations with their decision, verify satellite evidence, and record observations.
+
+6. Decision, Audit Trail, and Integration: Approved cases can be pushed forward with logs, ZIP attachments, and integration-ready payloads.

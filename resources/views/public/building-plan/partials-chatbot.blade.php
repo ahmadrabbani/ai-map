@@ -2,12 +2,14 @@
     $chatWidgetId = 'public-bp-chat-' . $application->id . '-' . substr(md5(request()->path()), 0, 8);
     $hour = (int) now(config('app.timezone'))->format('G');
     $isOfficeHours = ! now(config('app.timezone'))->isWeekend() && $hour >= 9 && $hour < 17;
+    $initialUnreadAdMessages = (int) ($unreadAdEpermitMessages ?? 0);
 @endphp
 
-<div class="bp-chat-widget" id="{{ $chatWidgetId }}" data-chat-fetch-url="{{ route('public.bp.applications.chat.index', $application->id) }}" data-chat-post-url="{{ route('public.bp.applications.chat.store', $application->id) }}" data-chat-csrf="{{ csrf_token() }}" data-office-hours="{{ $isOfficeHours ? '1' : '0' }}">
+<div class="bp-chat-widget" id="{{ $chatWidgetId }}" data-chat-fetch-url="{{ route('public.bp.applications.chat.index', $application->id) }}" data-chat-post-url="{{ route('public.bp.applications.chat.store', $application->id) }}" data-chat-csrf="{{ csrf_token() }}" data-office-hours="{{ $isOfficeHours ? '1' : '0' }}" data-initial-unread-ad="{{ $initialUnreadAdMessages }}">
     <button class="bp-chat-launcher" type="button" data-chat-open>
         <span class="bp-chat-launcher-icon">✦</span>
-        <span>AI Help</span>
+        <span data-chat-launcher-text>{{ $initialUnreadAdMessages > 0 ? 'AD ePermit Message' : 'AI Help' }}</span>
+        <span class="bp-chat-badge" data-ad-unread-badge style="{{ $initialUnreadAdMessages > 0 ? '' : 'display:none;' }}">{{ $initialUnreadAdMessages }}</span>
     </button>
 
     <div class="bp-chat-popup" data-chat-popup>
@@ -37,8 +39,9 @@
 
 <style>
 .bp-chat-widget{position:fixed;right:24px;bottom:24px;z-index:2000}
-.bp-chat-launcher{display:flex;align-items:center;gap:8px;border:0;border-radius:999px;padding:12px 18px;background:linear-gradient(135deg,#0f766e,#113f67);color:#fff;font-weight:800;box-shadow:0 18px 40px rgba(17,63,103,.28)}
+.bp-chat-launcher{display:flex;align-items:center;gap:8px;border:0;border-radius:999px;padding:12px 18px;background:linear-gradient(135deg,#0f766e,#113f67);color:#fff;font-weight:800;box-shadow:0 18px 40px rgba(17,63,103,.28);position:relative}
 .bp-chat-launcher-icon{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.18)}
+.bp-chat-badge{min-width:22px;height:22px;border-radius:999px;padding:0 7px;background:#dc2626;color:#fff;font-size:12px;line-height:22px;text-align:center;box-shadow:0 0 0 3px rgba(255,255,255,.9)}
 .bp-chat-popup{display:none;width:min(420px,calc(100vw - 24px));height:min(640px,calc(100vh - 44px));background:#fff;border-radius:18px;overflow:hidden;border:1px solid rgba(15,118,110,.18);box-shadow:0 24px 80px rgba(15,23,42,.28)}
 .bp-chat-widget.is-open .bp-chat-popup{display:flex;flex-direction:column}
 .bp-chat-widget.is-open .bp-chat-launcher{display:none}
@@ -74,12 +77,18 @@
   const body = root.querySelector('[data-chat-body]');
   const form = root.querySelector('[data-chat-form]');
   const input = root.querySelector('[data-chat-input]');
+  const send = form.querySelector('button[type="submit"]');
   const status = root.querySelector('[data-chat-status]');
   const officeNote = root.querySelector('[data-office-note]');
+  const unreadBadge = root.querySelector('[data-ad-unread-badge]');
+  const launcherText = root.querySelector('[data-chat-launcher-text]');
   const tabs = [...root.querySelectorAll('.bp-chat-tab')];
 
   let activeChannel = 'ai';
   let lastMessageId = { ai: 0, ad_epermit: 0 };
+  let isSending = false;
+  let isLoading = false;
+  let unreadAdMessages = Number(root.dataset.initialUnreadAd || 0);
 
   const roleLabel = (r) => {
     if (r === 'assistant') return 'AI Assistant';
@@ -88,6 +97,13 @@
   };
 
   const allowedAdLive = () => root.dataset.officeHours === '1';
+  const updateUnreadBadge = (count) => {
+    unreadAdMessages = Math.max(0, Number(count || 0));
+    if (!unreadBadge || !launcherText) return;
+    unreadBadge.textContent = String(unreadAdMessages);
+    unreadBadge.style.display = unreadAdMessages > 0 ? '' : 'none';
+    launcherText.textContent = unreadAdMessages > 0 ? 'AD ePermit Message' : 'AI Help';
+  };
 
   const setChannel = (ch) => {
     activeChannel = ch;
@@ -111,15 +127,34 @@
     body.scrollTop = body.scrollHeight;
   };
 
+  async function readJsonResponse(response) {
+    const text = await response.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      return { ok: false, message: text.slice(0, 250) || 'Unexpected response.' };
+    }
+  }
+
   const fetchMessages = async () => {
+    if (isLoading) return;
+    isLoading = true;
     try {
       const url = new URL(root.dataset.chatFetchUrl, window.location.origin);
       url.searchParams.set('channel', activeChannel);
       const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
-      if (!res.ok) return;
-      const data = await res.json();
+      if (!res.ok) throw new Error('Unable to load messages.');
+      const data = await readJsonResponse(res);
+      if (Number.isFinite(Number(data.unread_ad_epermit_messages_count))) {
+        updateUnreadBadge(data.unread_ad_epermit_messages_count);
+      }
       renderMessages(data.messages || []);
-    } catch (e) { /* noop */ }
+    } catch (e) {
+      body.innerHTML = '<div class="text-muted small">Chat could not be loaded right now.</div>';
+    } finally {
+      isLoading = false;
+    }
   };
 
   const poll = async () => {
@@ -131,6 +166,9 @@
       const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
       if (!res.ok) return;
       const data = await res.json();
+      if (Number.isFinite(Number(data.unread_ad_epermit_messages_count))) {
+        updateUnreadBadge(data.unread_ad_epermit_messages_count);
+      }
       const incoming = Array.isArray(data.messages) ? data.messages : [];
       if (incoming.length > 0) {
         const existing = body.querySelectorAll('.bp-chat-message').length;
@@ -147,8 +185,24 @@
     } catch (e) { /* noop */ }
   };
 
+  const pollNotifications = async () => {
+    if (root.classList.contains('is-open') && activeChannel === 'ad_epermit') return;
+    try {
+      const url = new URL(root.dataset.chatFetchUrl, window.location.origin);
+      url.searchParams.set('channel', 'ad_epermit');
+      url.searchParams.set('peek', '1');
+      const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) return;
+      const data = await readJsonResponse(res);
+      if (Number.isFinite(Number(data.unread_ad_epermit_messages_count))) {
+        updateUnreadBadge(data.unread_ad_epermit_messages_count);
+      }
+    } catch (e) { /* noop */ }
+  };
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (isSending) return;
     const message = (input.value || '').trim();
     if (!message) return;
     if (activeChannel === 'ad_epermit' && !allowedAdLive()) {
@@ -156,6 +210,8 @@
       return;
     }
     status.textContent = 'Sending...';
+    isSending = true;
+    send.disabled = true;
     try {
       const res = await fetch(root.dataset.chatPostUrl, {
         method: 'POST',
@@ -166,7 +222,10 @@
         },
         body: JSON.stringify({ message, channel: activeChannel }),
       });
-      const data = await res.json();
+      const data = await readJsonResponse(res);
+      if (Number.isFinite(Number(data.unread_ad_epermit_messages_count))) {
+        updateUnreadBadge(data.unread_ad_epermit_messages_count);
+      }
       if (!res.ok || !data.ok) {
         status.textContent = data.message || 'Unable to send message.';
         return;
@@ -177,14 +236,25 @@
       setTimeout(() => status.textContent = '', 1200);
     } catch (err) {
       status.textContent = 'Network error. Please retry.';
+    } finally {
+      isSending = false;
+      send.disabled = false;
     }
   });
 
   tabs.forEach(tab => tab.addEventListener('click', () => setChannel(tab.dataset.channel)));
   openBtn.addEventListener('click', () => { root.classList.add('is-open'); fetchMessages(); });
   closeBtn.addEventListener('click', () => root.classList.remove('is-open'));
+  document.querySelectorAll('[data-open-ad-epermit-chat]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      root.classList.add('is-open');
+      setChannel('ad_epermit');
+    });
+  });
 
+  updateUnreadBadge(unreadAdMessages);
   setChannel('ai');
   setInterval(() => { if (root.classList.contains('is-open')) poll(); }, 6000);
+  setInterval(pollNotifications, 10000);
 })();
 </script>

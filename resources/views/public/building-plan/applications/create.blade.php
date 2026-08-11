@@ -153,6 +153,7 @@
                 <div class="border rounded p-2 bg-light">
                     <div><strong>Status:</strong> <span id="precheckStatus">Pending</span></div>
                     <div><strong>AI Confidence:</strong> <span id="precheckConfidence">0%</span></div>
+                    <div><strong>Confidence Source:</strong> <span id="precheckSource">-</span></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -216,23 +217,67 @@ const stepTitle = document.getElementById('stepTitle');
 const stepCount = document.getElementById('stepCount');
 const planFileInput = document.getElementById('planFile');
 const planMeta = document.getElementById('planMeta');
+const precheckEndpoint = @json(route('public.bp.applications.precheck'));
 const precheckModalEl = document.getElementById('precheckModal');
-const precheckModal = new bootstrap.Modal(precheckModalEl);
+const geoVerifyModalEl = document.getElementById('geoVerifyModal');
+function createModalController(el){
+  if (!el) return null;
+  if (window.bootstrap?.Modal) {
+    return bootstrap.Modal.getOrCreateInstance(el);
+  }
+  return {
+    show() {
+      el.classList.add('show');
+      el.style.display = 'block';
+      el.removeAttribute('aria-hidden');
+      el.setAttribute('aria-modal', 'true');
+      document.body.classList.add('modal-open');
+      if (!document.querySelector('.modal-backdrop[data-fallback-modal="true"]')) {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop fade show';
+        backdrop.dataset.fallbackModal = 'true';
+        document.body.appendChild(backdrop);
+      }
+    },
+    hide() {
+      el.classList.remove('show');
+      el.style.display = 'none';
+      el.setAttribute('aria-hidden', 'true');
+      el.removeAttribute('aria-modal');
+      const backdrop = document.querySelector('.modal-backdrop[data-fallback-modal="true"]');
+      if (backdrop) backdrop.remove();
+      if (!document.querySelector('.modal.show')) {
+        document.body.classList.remove('modal-open');
+      }
+    }
+  };
+}
+const precheckModal = createModalController(precheckModalEl);
 const precheckText = document.getElementById('precheckText');
 const precheckBar = document.getElementById('precheckBar');
 const precheckStatus = document.getElementById('precheckStatus');
 const precheckConfidence = document.getElementById('precheckConfidence');
+const precheckSource = document.getElementById('precheckSource');
 const precheckContinueBtn = document.getElementById('precheckContinueBtn');
-const geoVerifyModalEl = document.getElementById('geoVerifyModal');
-const geoVerifyModal = new bootstrap.Modal(geoVerifyModalEl);
+const geoVerifyModal = createModalController(geoVerifyModalEl);
 const geoVerifyAddress = document.getElementById('geoVerifyAddress');
 const geoMapFrame = document.getElementById('geoMapFrame');
 const geoVerifyText = document.getElementById('geoVerifyText');
+document.querySelectorAll('[data-bs-dismiss="modal"]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const modalEl = btn.closest('.modal');
+    if (modalEl && !window.bootstrap?.Modal) {
+      createModalController(modalEl)?.hide();
+    }
+  });
+});
 const geoVerifyBar = document.getElementById('geoVerifyBar');
 const geoVerifyResult = document.getElementById('geoVerifyResult');
 const geoApplyBtn = document.getElementById('geoApplyBtn');
 let step1PrecheckPassed = false;
 let geoSignalResult = 'Not evaluated';
+let precheckLoadingTimer = null;
+let precheckLoadingValue = 0;
 
 function renderStep(){
   panes.forEach(p => p.classList.toggle('active', Number(p.dataset.step) === currentStep));
@@ -369,6 +414,54 @@ function openGeoVerificationPanel(){
   };
 }
 
+function startPrecheckLoading(){
+  clearInterval(precheckLoadingTimer);
+  precheckLoadingValue = 12;
+  precheckBar.style.width = `${precheckLoadingValue}%`;
+  precheckText.textContent = 'Uploading plan for verification...';
+
+  const messages = [
+    'Uploading plan for verification...',
+    'Reading CAD metadata...',
+    'Running AI pre-scrutiny...',
+    'Evaluating confidence and text mappings...'
+  ];
+  let messageIndex = 0;
+
+  precheckLoadingTimer = setInterval(() => {
+    if (precheckLoadingValue < 88) {
+      precheckLoadingValue += precheckLoadingValue < 50 ? 9 : 4;
+      if (precheckLoadingValue > 88) precheckLoadingValue = 88;
+      precheckBar.style.width = `${precheckLoadingValue}%`;
+    }
+    if (messageIndex < messages.length - 1) {
+      messageIndex += 1;
+      precheckText.textContent = messages[messageIndex];
+    }
+  }, 450);
+}
+
+function stopPrecheckLoading(finalMessage, finalPercent = 100){
+  if (precheckLoadingTimer) {
+    clearInterval(precheckLoadingTimer);
+    precheckLoadingTimer = null;
+  }
+  precheckLoadingValue = finalPercent;
+  precheckBar.style.width = `${finalPercent}%`;
+  if (finalMessage) {
+    precheckText.textContent = finalMessage;
+  }
+}
+
+function buildApprovalTimelineMessage(confidence, isClear){
+  if (!isClear) {
+    return 'Confidence is below 80%. It may take more than 1 week due to manual review.';
+  }
+  return confidence >= 80
+    ? 'Confidence is 80% or above. You should get approval within 1 week, subject to authority review.'
+    : 'Confidence is below 80%. It may take more than 1 week due to manual review.';
+}
+
 nextBtn.addEventListener('click', () => {
   if(!validateCurrentStep()) return;
   if(currentStep === 1){
@@ -429,44 +522,114 @@ function runStep1Precheck(){
   precheckContinueBtn.disabled = true;
   precheckStatus.textContent = 'Pending';
   precheckConfidence.textContent = '0%';
+  precheckSource.textContent = '-';
   precheckText.textContent = 'Preparing verification...';
   precheckBar.style.width = '0%';
+  precheckContinueBtn.textContent = 'Proceed to Next Step';
+  precheckContinueBtn.disabled = true;
   precheckModal.show();
-
-  const stages = ['Uploading plan for verification', 'Reading CAD metadata', 'Running AI pre-scrutiny', 'Generating confidence score'];
-  let i = 0;
-  const tick = setInterval(() => {
-    if (i >= stages.length) {
-      clearInterval(tick);
-      finalizeStep1Precheck(file);
-      return;
-    }
-    precheckText.textContent = stages[i];
-    precheckBar.style.width = `${Math.round(((i + 1) / stages.length) * 100)}%`;
-    i++;
-  }, 550);
+  startPrecheckLoading();
+  void finalizeStep1Precheck(file);
 }
 
-function finalizeStep1Precheck(file){
+async function finalizeStep1Precheck(file){
+  const fallback = computeLocalPrecheck(file);
+  try {
+    const formData = new FormData();
+    formData.append('plan_file', file);
+
+    const response = await fetch(precheckEndpoint, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+        'Accept': 'application/json',
+      },
+      body: formData,
+    });
+
+    const payload = await response.json().catch(() => null);
+    const responseConfidence = selectPreviewConfidence(payload, fallback.confidence);
+    const confidence = Number(responseConfidence.score);
+    const status = String(payload?.recommendation || (confidence >= 80 ? 'Clear' : 'Needs Review'));
+    const isClear = response.ok && confidence >= 80 && !String(payload?.status || '').toLowerCase().includes('error');
+    const canProceed = response.ok && !String(payload?.status || '').toLowerCase().includes('error');
+    const source = responseConfidence.source || payload?.confidence_source || 'unknown';
+
+    stopPrecheckLoading(buildApprovalTimelineMessage(confidence, isClear));
+
+    precheckStatus.textContent = status === 'Needs Expert Review' ? 'Needs Review' : (isClear ? 'Clear' : 'Needs Review');
+    precheckStatus.className = isClear ? 'text-success fw-semibold' : 'text-danger fw-semibold';
+    precheckConfidence.textContent = `${confidence.toFixed(2)}%`;
+    precheckSource.textContent = source;
+    precheckContinueBtn.disabled = !canProceed;
+    precheckContinueBtn.textContent = isClear ? 'Proceed to Next Step' : 'Proceed Anyway';
+    precheckContinueBtn.classList.remove('btn-primary', 'btn-warning', 'btn-outline-warning');
+    precheckContinueBtn.classList.add(isClear ? 'btn-primary' : 'btn-warning');
+    step1PrecheckPassed = canProceed;
+
+    if (Array.isArray(payload?.warnings) && payload.warnings.length) {
+      console.warn('Precheck warnings:', payload.warnings);
+    }
+    return;
+  } catch (error) {
+    console.warn('Server precheck failed, falling back to local heuristic:', error);
+  }
+
+  stopPrecheckLoading(
+    fallback.isClear
+      ? 'Verification clear. You can proceed to next step.'
+      : 'Verification did not pass threshold. Manual review is recommended.'
+  );
+
+  const confidence = fallback.confidence;
+  const isClear = fallback.isClear;
+  const canProceed = true;
+  const timelineMessage = buildApprovalTimelineMessage(confidence, isClear);
+  precheckStatus.textContent = isClear ? 'Clear' : 'Needs Review';
+  precheckStatus.className = isClear ? 'text-success fw-semibold' : 'text-danger fw-semibold';
+  precheckConfidence.textContent = confidence + '%';
+  precheckSource.textContent = 'local_heuristic';
+  precheckContinueBtn.disabled = !canProceed;
+  precheckContinueBtn.textContent = isClear ? 'Proceed to Next Step' : 'Proceed Anyway';
+  precheckContinueBtn.classList.remove('btn-primary', 'btn-warning', 'btn-outline-warning');
+  precheckContinueBtn.classList.add(isClear ? 'btn-primary' : 'btn-warning');
+  step1PrecheckPassed = canProceed;
+  stopPrecheckLoading(timelineMessage);
+}
+
+function selectPreviewConfidence(payload, fallbackConfidence){
+  const candidates = [
+    ['cad_confidence_assessment.final_confidence_score', payload?.cad_confidence_assessment?.final_confidence_score],
+    ['cad_confidence_assessment.confidence_score', payload?.cad_confidence_assessment?.confidence_score],
+    ['analysis_json.cad_confidence_assessment.final_confidence_score', payload?.analysis_json?.cad_confidence_assessment?.final_confidence_score],
+    ['analysis_json.cad_confidence_assessment.confidence_score', payload?.analysis_json?.cad_confidence_assessment?.confidence_score],
+    ['analysis_confidence_score', payload?.analysis_confidence_score],
+    ['analysis.confidence_score', payload?.confidence_score],
+  ];
+
+  for (const [source, value] of candidates) {
+    const num = Number(value);
+    if (Number.isFinite(num)) {
+      return { score: num, source };
+    }
+  }
+
+  return { score: Number(fallbackConfidence) || 0, source: 'local_heuristic' };
+}
+
+function computeLocalPrecheck(file){
   const ext = file.name.split('.').pop().toLowerCase();
   const sizeMb = file.size / (1024 * 1024);
   const validExt = ['dwg','dxf','cad','pdf'].includes(ext);
   let confidence = validExt ? 84 : 40;
-
   if (sizeMb <= 20) confidence += 8;
   if (sizeMb > 45) confidence -= 10;
   if (ext === 'dwg' || ext === 'dxf') confidence += 4;
   confidence = Math.max(0, Math.min(99, Math.round(confidence)));
-
-  const isClear = validExt && confidence > 80;
-  precheckStatus.textContent = isClear ? 'Clear' : 'Needs Review';
-  precheckStatus.className = isClear ? 'text-success fw-semibold' : 'text-danger fw-semibold';
-  precheckConfidence.textContent = confidence + '%';
-  precheckContinueBtn.disabled = !isClear;
-  step1PrecheckPassed = isClear;
-  precheckText.textContent = isClear
-    ? 'Verification clear. You can proceed to next step.'
-    : 'Verification did not pass threshold (needs Clear and confidence > 80).';
+  return {
+    confidence,
+    isClear: validExt && confidence >= 80,
+  };
 }
 
 precheckContinueBtn.addEventListener('click', () => {

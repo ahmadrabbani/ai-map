@@ -46,6 +46,8 @@ class BpChatBrainService
 
         $latestUser = (string) ($userMsgs->last() ?? '');
         $latestAssistant = (string) ($assistantMsgs->last() ?? '');
+        $report = (array) ($application->aiReport?->analysis_json ?? []);
+        $patternProfile = (array) data_get($report, 'dxf_pattern_profile', []);
 
         $signals = [
             'conversation_count' => (int) $messages->count(),
@@ -55,6 +57,8 @@ class BpChatBrainService
             'application_status' => (string) $application->status,
             'ai_recommendation' => (string) optional($application->aiReport)->ai_recommendation,
             'ai_confidence_score' => (float) (optional($application->aiReport)->ai_confidence_score ?? 0),
+            'dxf_pattern_family' => (string) data_get($patternProfile, 'pattern_family', 'generic_dxf'),
+            'dxf_pattern_strength' => (float) data_get($patternProfile, 'pattern_strength', 0),
         ];
 
         $summary = $this->buildSummary($signals);
@@ -99,13 +103,15 @@ class BpChatBrainService
         $intents = implode(', ', (array) ($signals['user_intents'] ?? []));
 
         return trim(sprintf(
-            'User focus: %s. Current need: %s. Latest guidance: %s. Case status: %s. AI recommendation: %s (%.2f%%).',
+            'User focus: %s. Current need: %s. Latest guidance: %s. Case status: %s. AI recommendation: %s (%.2f%%). DXF pattern: %s (%.2f).',
             $intents !== '' ? $intents : 'general compliance clarification',
             (string) ($signals['latest_user_need'] ?? ''),
             (string) ($signals['latest_assistant_guidance'] ?? ''),
             (string) ($signals['application_status'] ?? ''),
             (string) ($signals['ai_recommendation'] ?? ''),
-            (float) ($signals['ai_confidence_score'] ?? 0)
+            (float) ($signals['ai_confidence_score'] ?? 0),
+            (string) ($signals['dxf_pattern_family'] ?? 'generic_dxf'),
+            (float) ($signals['dxf_pattern_strength'] ?? 0)
         ));
     }
 }

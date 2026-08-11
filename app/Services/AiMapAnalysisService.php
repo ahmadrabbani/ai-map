@@ -6,6 +6,8 @@ use App\Models\BpApplication;
 use App\Models\CadSubmission;
 use App\Models\MapDrawing;
 use App\Models\MapEntity;
+use App\Services\MapApproval\CadConfidenceEvaluatorService;
+use App\Services\MapApproval\DxfPatternProfileService;
 use App\Services\MapApproval\GeometryCalculationService;
 use App\Services\MapApproval\MapApprovalPipelineService;
 use App\Services\MapApproval\MapApprovalReportService;
@@ -26,6 +28,8 @@ class AiMapAnalysisService
         private readonly RuleValidationService $mapRuleValidationService,
         private readonly MapApprovalReportService $mapReportService,
         private readonly StructuralExtractionService $structuralExtractionService,
+        private readonly CadConfidenceEvaluatorService $cadConfidenceEvaluatorService,
+        private readonly DxfPatternProfileService $dxfPatternProfileService,
         private readonly RuleRiskScoringService $ruleRiskScoringService,
         private readonly ImageryBuildSignalService $imageryBuildSignalService,
     ) {
@@ -67,6 +71,7 @@ class AiMapAnalysisService
         try {
             if ($ext === 'dwg') {
                 $dwgAbs = Storage::disk('local')->path((string) $cadSubmission->stored_dwg_path);
+                $confidenceDrawing = null;
                 $run = $this->cadComplianceService->processSubmission($cadSubmission, $dwgAbs, [
                     'allow_heuristic_fallback' => true,
                 ]);
@@ -82,17 +87,21 @@ class AiMapAnalysisService
                         $mapped = $this->mapPipelineService->mapExistingCadSubmission($cadSubmission->fresh());
                         $drawing = $mapped['drawing']->fresh('entities');
                         $this->hydrateCadTextReferencesFromLayers($drawing);
+                        $profile = $this->dxfPatternProfileService->profile($drawing);
+                        $this->dxfPatternProfileService->persist($drawing, $profile);
                         $structural = $this->extractAndPersistStructural($drawing);
                         $geometry = $this->geometryCalculationService->calculate($drawing);
                         $semanticRules = $this->mapRuleValidationService->validate($drawing->fresh('entities'), $geometry);
                         $report = $this->mapReportService->generate($drawing->fresh(['entities', 'geometryResults', 'ruleResults']));
                         $mapDrawingId = $drawing->id;
+                        $confidenceDrawing = $drawing;
                         $rules = ! empty($semanticRules) ? $semanticRules : $rules;
                         $status = (string) ($report['status'] ?? $status);
                         $recommendation = $this->recommendationFromReportStatus($status);
                         $run['map_pipeline'] = $mapped;
                         $run['map_report'] = $report;
                         $run['structural_extraction'] = $structural;
+                        $run['dxf_pattern_profile'] = $profile ?? [];
                     } catch (\Throwable $semanticError) {
                         $analysis['semantic_pipeline_warning'] = $semanticError->getMessage();
                     }
@@ -102,20 +111,31 @@ class AiMapAnalysisService
                     $fallbackDrawing = $this->buildDwgTextFallbackDrawing($application, $cadSubmission);
                     if ($fallbackDrawing) {
                         $this->hydrateCadTextReferencesFromLayers($fallbackDrawing);
+                        $profile = $this->dxfPatternProfileService->profile($fallbackDrawing);
+                        $this->dxfPatternProfileService->persist($fallbackDrawing, $profile);
                         $mapDrawingId = $fallbackDrawing->id;
+                        $confidenceDrawing = $fallbackDrawing;
                         $analysis['dwg_text_fallback'] = 'applied';
                     }
                 }
 
+                $analysis = $this->applyCadConfidenceAssessment($analysis, $rules, $confidenceDrawing);
+                $confidenceScore = (float) data_get($analysis, 'confidence_score', $this->confidenceFromRules($rules));
+                $analysisJson = $this->attachImagerySignal(
+                    $this->attachMlAdvisory($run, $rules),
+                    $application
+                );
+                $analysisJson = $this->applyCadConfidenceAssessment($analysisJson, $rules, $confidenceDrawing);
+
                 return [
                     'status' => $status,
                     'recommendation' => $recommendation,
-                    'confidence_score' => $this->confidenceFromRules($rules),
-                    'analysis_json' => $this->attachImagerySignal(
-                        $this->attachMlAdvisory($run, $rules),
-                        $application
-                    ),
-                    'warnings' => (array) ($analysis['warnings'] ?? []),
+                    'confidence_score' => $confidenceScore,
+                    'analysis_json' => $analysisJson,
+                    'warnings' => array_values(array_unique(array_merge(
+                        (array) ($analysis['warnings'] ?? []),
+                        (array) data_get($analysis, 'cad_confidence_assessment.warnings', [])
+                    ))),
                     'expert_review_items' => $this->expertItemsFromAnalysis($analysis, $rules),
                     'map_drawing_id' => $mapDrawingId,
                 ];
@@ -126,6 +146,8 @@ class AiMapAnalysisService
                 $mapped = $this->mapPipelineService->mapExistingCadSubmission($cadSubmission);
                 $drawing = $mapped['drawing']->fresh('entities');
                 $this->hydrateCadTextReferencesFromLayers($drawing);
+                $profile = $this->dxfPatternProfileService->profile($drawing);
+                $this->dxfPatternProfileService->persist($drawing, $profile);
                 $structural = $this->extractAndPersistStructural($drawing);
                 $geometry = $this->geometryCalculationService->calculate($drawing);
                 $this->mapRuleValidationService->validate($drawing->fresh('entities'), $geometry);
@@ -133,21 +155,30 @@ class AiMapAnalysisService
 
                 $rules = (array) ($report['rules'] ?? []);
                 $status = (string) ($report['status'] ?? 'needs_expert_review');
+                $analysis = $this->applyCadConfidenceAssessment([
+                    'map_pipeline' => $mapped,
+                    'map_report' => $report,
+                    'structural_extraction' => $structural,
+                    'dxf_pattern_profile' => $profile ?? [],
+                ], $rules, $drawing);
+                $confidenceScore = (float) data_get($analysis, 'confidence_score', $this->confidenceFromRules($rules));
 
                 return [
                     'status' => $status,
                     'recommendation' => $this->recommendationFromReportStatus($status),
-                    'confidence_score' => $this->confidenceFromRules($rules),
+                    'confidence_score' => $confidenceScore,
                     'analysis_json' => $this->attachImagerySignal(
-                        $this->attachMlAdvisory([
-                            'map_pipeline' => $mapped,
-                            'map_report' => $report,
-                            'structural_extraction' => $structural,
-                        ], $rules),
+                        $this->attachMlAdvisory($analysis, $rules),
                         $application
                     ),
-                    'warnings' => (array) ($report['expert_review_reasons'] ?? []),
-                    'expert_review_items' => (array) ($report['missing_required_entities'] ?? []),
+                    'warnings' => array_values(array_unique(array_merge(
+                        (array) ($report['expert_review_reasons'] ?? []),
+                        (array) data_get($analysis, 'cad_confidence_assessment.warnings', [])
+                    ))),
+                    'expert_review_items' => array_values(array_unique(array_merge(
+                        (array) ($report['missing_required_entities'] ?? []),
+                        (array) data_get($analysis, 'cad_confidence_assessment.missing_layers', [])
+                    ))),
                     'map_drawing_id' => $drawing->id,
                 ];
             }
@@ -270,6 +301,53 @@ class AiMapAnalysisService
             'role' => 'advisory_only',
             'note' => 'Imagery signal supports triage only. Final compliance is rule-engine + expert decision.',
         ];
+
+        return $analysisJson;
+    }
+
+    private function applyCadConfidenceAssessment(array $analysisJson, array $rules, ?MapDrawing $drawing): array
+    {
+        if (! $drawing) {
+            $analysisJson['cad_confidence_assessment'] = [
+                'confidence_score' => 0,
+                'confidence_level' => 'low',
+                'missing_layers' => ['map_drawing_missing'],
+                'available_layers' => [],
+                'fallback_method_used' => 'none',
+                'dimension_source' => 'bounding_box_estimation',
+                'warnings' => ['CAD drawing is missing, so confidence cannot be evaluated reliably.'],
+                'summary' => 'CAD drawing is missing, so confidence cannot be evaluated reliably.',
+                'score_breakdown' => [
+                    'base_score' => 100,
+                    'penalties' => [
+                        ['reason' => 'Missing drawing', 'value' => -100, 'detail' => 'Map drawing was not available.'],
+                    ],
+                    'final_score' => 0,
+                ],
+            ];
+            $analysisJson['rule_confidence_score'] = 0;
+            $analysisJson['confidence_score'] = 0;
+
+            return $analysisJson;
+        }
+
+        $assessment = $this->cadConfidenceEvaluatorService->evaluate($drawing);
+        $ruleConfidence = $this->confidenceFromRules($rules);
+        $cadConfidence = (float) ($assessment['confidence_score'] ?? 0);
+        $finalScore = empty($rules)
+            ? round($cadConfidence, 2)
+            : round(min($ruleConfidence, $cadConfidence), 2);
+
+        $assessment['rule_confidence_score'] = round($ruleConfidence, 2);
+        $assessment['final_confidence_score'] = $finalScore;
+        $assessment['summary'] = $assessment['summary'] ?? (
+            'Confidence is ' . ($assessment['confidence_level'] ?? 'low')
+            . ' because the CAD layer quality and measurement provenance were evaluated.'
+        );
+
+        $analysisJson['confidence_score'] = $finalScore;
+        $analysisJson['rule_confidence_score'] = round($ruleConfidence, 2);
+        $analysisJson['cad_confidence_assessment'] = $assessment;
 
         return $analysisJson;
     }
@@ -960,17 +1038,19 @@ class AiMapAnalysisService
             if ($text === '') {
                 continue;
             }
+            $layerHint = $this->roomCategoryFromLayerName((string) ($item['layer'] ?? ''));
 
             $dimension = $this->dimensionPairFromText($text);
             if ($dimension) {
                 $dimensions[] = array_merge($item, ['dimension' => $dimension]);
             }
 
-            $category = $this->roomCategoryFromText($text);
+            $category = $this->roomCategoryFromText($text) ?? $layerHint;
             if ($category) {
                 $labels[] = array_merge($item, [
                     'category' => $category,
-                    'label_text' => $this->normalizeRoomLabel($text),
+                    'label_text' => $this->normalizeRoomLabel($category . ' ' . $text),
+                    'layer_hint' => $layerHint,
                 ]);
             }
         }
@@ -1003,6 +1083,7 @@ class AiMapAnalysisService
                 'dimension_text' => (string) ($near['text'] ?? ''),
                 'label_layer' => (string) ($label['layer'] ?? ''),
                 'dimension_layer' => (string) ($near['layer'] ?? ''),
+                'layer_hint' => (string) ($label['layer_hint'] ?? ''),
                 'x' => $label['x'] ?? null,
                 'y' => $label['y'] ?? null,
             ];
@@ -1030,6 +1111,26 @@ class AiMapAnalysisService
             str_contains($low, 'lobby') => 'LOBBY',
             str_contains($low, 'passage') => 'PASSAGE',
             str_contains($low, 'stair') => 'STAIR',
+            default => null,
+        };
+    }
+
+    private function roomCategoryFromLayerName(string $layerName): ?string
+    {
+        $low = strtolower($this->normalizeRoomLabel($layerName));
+        $low = preg_replace('/[^a-z0-9\s]/', ' ', (string) $low);
+        $low = trim(preg_replace('/\s+/', ' ', (string) $low));
+
+        return match (true) {
+            str_contains($low, 'stair') => 'STAIR',
+            str_contains($low, 'bed') || str_contains($low, 'room') => 'ROOM',
+            str_contains($low, 'drawing') => 'DRAWING',
+            str_contains($low, 'kitchen') => 'KITCHEN',
+            str_contains($low, 'bath') || str_contains($low, 'toilet') || str_contains($low, 'wash') => 'BATH',
+            str_contains($low, 'porch') => 'PORCH',
+            str_contains($low, 'store') => 'STORE',
+            str_contains($low, 'lobby') => 'LOBBY',
+            str_contains($low, 'passage') => 'PASSAGE',
             default => null,
         };
     }

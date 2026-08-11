@@ -90,6 +90,8 @@
 
   let activeChannel = 'ai';
   let lastMessageId = { ai: 0, ad_epermit: 0 };
+  let isSending = false;
+  let isLoading = false;
 
   function roleLabel(role) {
     const r = String(role || '').toLowerCase();
@@ -125,18 +127,35 @@
     body.scrollTop = body.scrollHeight;
   }
 
+  async function readJsonResponse(response) {
+    const text = await response.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      return { ok: false, message: text.slice(0, 250) || 'Unexpected response.' };
+    }
+  }
+
   async function refresh(force) {
+    if (isLoading) return;
+    isLoading = true;
     try {
       const since = force ? 0 : (lastMessageId[activeChannel] || 0);
       const r = await fetch(`${fetchUrl}?channel=${activeChannel}&since_id=${since}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
-      if (!r.ok) return;
-      const data = await r.json();
+      if (!r.ok) throw new Error('Unable to load chat messages.');
+      const data = await readJsonResponse(r);
       const msgs = Array.isArray(data.messages) ? data.messages : [];
       if (msgs.length) {
         lastMessageId[activeChannel] = Math.max(...msgs.map(x => Number(x.id || 0)), lastMessageId[activeChannel] || 0);
       }
       render(msgs);
-    } catch (_) {}
+      status.textContent = '';
+    } catch (_) {
+      body.innerHTML = '<div class="text-muted small">Chat could not be loaded right now.</div>';
+    } finally {
+      isLoading = false;
+    }
   }
 
   root.querySelector('[data-chat-open]').addEventListener('click', () => { root.classList.add('is-open'); refresh(true); });
@@ -145,17 +164,19 @@
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (isSending) return;
     const message = input.value.trim();
     if (!message) return;
     status.textContent = 'Sending...';
     send.disabled = true;
+    isSending = true;
     try {
       const p = new URLSearchParams();
       p.set('_token', csrf);
       p.set('message', message);
       p.set('channel', activeChannel);
       const r = await fetch(postUrl, { method: 'POST', headers: { Accept:'application/json','Content-Type':'application/x-www-form-urlencoded;charset=UTF-8' }, credentials:'same-origin', body: p.toString() });
-      const data = await r.json();
+      const data = await readJsonResponse(r);
       if (!r.ok || data.ok === false) throw new Error(data.message || 'Failed');
       input.value = '';
       status.textContent = 'Message sent.';
@@ -165,6 +186,7 @@
       status.textContent = err.message || 'Could not send.';
     } finally {
       send.disabled = false;
+      isSending = false;
     }
   });
 

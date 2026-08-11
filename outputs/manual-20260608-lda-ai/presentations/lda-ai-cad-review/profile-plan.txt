@@ -1,0 +1,23 @@
+task mode: create
+primary deck-profile: strategy-leadership
+secondary profile gates: engineering-platform
+required proof objects:
+- CAD-vs-BIM/Revit comparison table
+- Proposed applicant-to-officer workflow diagram
+- Machine learning process flow
+- Manual-vs-AI feature comparison
+- Implementation roadmap
+- Governance and human-review model
+- Screenshot placeholder list for demo evidence
+source/asset requirements:
+- User-provided deck brief is the source of truth.
+- Product screenshots are placeholders because the final required screenshots were not attached as a screenshot pack.
+brand authenticity constraints:
+- No fabricated government marks or third-party logos.
+- Use text identity only: Lahore Development Authority / LDA AI Verification System.
+profile-specific QA gates:
+- Strategy thesis must be clear: locally optimized CAD-based AI scrutiny is practical for Pakistan and developing countries.
+- Engineering labels must remain meaningful: CAD/DWG/DXF/PDF parsing, OCR, GIS, rule engine, ML confidence, audit logs.
+- BIM/Revit comparison must be respectful, not critical.
+known missing inputs:
+- Final approved screenshots for all demo states.

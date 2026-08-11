@@ -14,7 +14,7 @@ class DfpsApplicationPushService
     {
     }
 
-    public function push(PublicBuildingPlanApplication $application, ?int $pushedByUserId = null): array
+    public function push(PublicBuildingPlanApplication $application, ?int $pushedByUserId = null, ?string $remarks = null): array
     {
         $endpoint = trim((string) config('services.dfps.endpoint'));
         if ($endpoint === '') {
@@ -22,7 +22,7 @@ class DfpsApplicationPushService
         }
 
         $application->loadMissing(['documents', 'statusLogs', 'siteReview']);
-        $payload = $this->buildPayload($application);
+        $payload = $this->buildPayload($application, $remarks);
         $safePayloadForLog = $payload;
         $safePayloadForLog['cnic'] = $this->masked((string) ($payload['cnic'] ?? ''));
 
@@ -83,7 +83,7 @@ class DfpsApplicationPushService
         }
     }
 
-    private function buildPayload(PublicBuildingPlanApplication $application): array
+    private function buildPayload(PublicBuildingPlanApplication $application, ?string $remarks = null): array
     {
         $latestDecision = $application->statusLogs()->latest('id')->first();
 
@@ -105,6 +105,7 @@ class DfpsApplicationPushService
             'cad_file_available' => (bool) ($application->cad_file_path ?: $application->plan_file_path),
             'site_review_available' => (bool) $application->siteReview,
             'decision_payload' => $latestDecision?->payload_json,
+            'push_remarks' => $remarks,
         ];
     }
 

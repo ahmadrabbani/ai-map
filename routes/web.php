@@ -14,6 +14,7 @@ use App\Http\Controllers\CadApprovalWizardController;
 use App\Http\Controllers\BuildingPlanApplicationController;
 use App\Http\Controllers\BuildingPlanAiReportController;
 use App\Http\Controllers\BuildingPlanChatController;
+use App\Http\Controllers\AdminApplicantChatController;
 use App\Http\Controllers\AdEpermitReviewController;
 use App\Http\Controllers\AdEpermitAuthController;
 use App\Http\Controllers\DdtpReviewController;
@@ -207,6 +208,10 @@ Route::middleware('ad.epermit')->group(function () {
         ->name('admin.plan.bp.ad.site-review');
     Route::post('/admin/plan/ad-epermit/{application}/push-dfps', [AdEpermitReviewController::class, 'pushToDfps'])
         ->name('admin.plan.bp.ad.push-dfps');
+    Route::get('/admin/plan/ad-epermit/{application}/applicant-chat', [AdminApplicantChatController::class, 'index'])
+        ->name('admin.plan.bp.ad.applicant-chat.index');
+    Route::post('/admin/plan/ad-epermit/{application}/applicant-chat', [AdminApplicantChatController::class, 'store'])
+        ->name('admin.plan.bp.ad.applicant-chat.store');
 });
 
 Route::get('/admin/plan/ddtp', [DdtpReviewController::class, 'index'])
@@ -239,6 +244,8 @@ Route::middleware('bp.applicant')->group(function () {
         ->name('public.bp.dashboard');
     Route::get('/building-plan-ai/applications/create', [PublicBuildingPlanPortalController::class, 'create'])
         ->name('public.bp.applications.create');
+    Route::post('/building-plan-ai/applications/precheck', [PublicBuildingPlanPortalController::class, 'precheck'])
+        ->name('public.bp.applications.precheck');
     Route::post('/building-plan-ai/applications/store', [PublicBuildingPlanPortalController::class, 'store'])
         ->name('public.bp.applications.store');
     Route::get('/building-plan-ai/applications/{id}', [PublicBuildingPlanPortalController::class, 'show'])

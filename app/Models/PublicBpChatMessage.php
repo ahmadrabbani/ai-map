@@ -15,11 +15,13 @@ class PublicBpChatMessage extends Model
         'message',
         'context_json',
         'sent_at',
+        'read_by_applicant_at',
     ];
 
     protected $casts = [
         'context_json' => 'array',
         'sent_at' => 'datetime',
+        'read_by_applicant_at' => 'datetime',
     ];
 
     public function application()

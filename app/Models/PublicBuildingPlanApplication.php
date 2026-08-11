@@ -74,6 +74,11 @@ class PublicBuildingPlanApplication extends Model
         return $this->belongsTo(Applicant::class, 'user_id');
     }
 
+    public function legacyBpApplication()
+    {
+        return $this->belongsTo(BpApplication::class, 'legacy_bp_application_id');
+    }
+
     public function documents()
     {
         return $this->hasMany(ApplicationDocument::class, 'application_id');

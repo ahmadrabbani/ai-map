@@ -13,6 +13,8 @@ class AiReportGenerationService
         $ai = (array) ($analysis['analysis_json'] ?? []);
         $mapReport = (array) data_get($ai, 'map_report', []);
         $cadAnalysis = (array) data_get($ai, 'analysis_result', []);
+        $cadConfidence = (array) data_get($ai, 'cad_confidence_assessment', []);
+        $dxfPatternProfile = (array) data_get($ai, 'dxf_pattern_profile', []);
         $structural = (array) data_get($ai, 'structural_extraction', []);
         $imagerySignal = (array) data_get($ai, 'imagery_signal', []);
 
@@ -84,6 +86,8 @@ class AiReportGenerationService
             'warnings' => $warnings,
             'items_requiring_expert_review' => $expertItems,
             'ai_confidence_score' => $analysis['confidence_score'] ?? 0,
+            'cad_confidence_assessment' => $cadConfidence,
+            'dxf_pattern_profile' => $dxfPatternProfile,
             'ai_recommendation' => $analysis['recommendation'] ?? 'Needs Expert Review',
             'chatbot_conversation_summary' => $chatSummary,
             'imagery_signal' => $imagerySignal,
@@ -117,6 +121,12 @@ class AiReportGenerationService
         $lines[] = "Verification URL: {$report['verification_url']}";
         $lines[] = "AI Recommendation: **{$report['ai_recommendation']}**";
         $lines[] = "AI Confidence Score: **{$report['ai_confidence_score']}%**";
+        $lines[] = "CAD Confidence Score: **" . number_format((float) data_get($report, 'cad_confidence_assessment.confidence_score', 0), 2) . "%**";
+        $lines[] = "CAD Confidence Level: **" . strtoupper((string) data_get($report, 'cad_confidence_assessment.confidence_level', 'unknown')) . "**";
+        $lines[] = "DXF Pattern Family: **" . (string) data_get($report, 'dxf_pattern_profile.pattern_family', 'generic_dxf') . "**";
+        $lines[] = "DXF Pattern Strength: **" . number_format((float) data_get($report, 'dxf_pattern_profile.pattern_strength', 0), 2) . "**";
+        $lines[] = "CAD Confidence Source: " . (string) data_get($report, 'cad_confidence_assessment.dimension_source', 'unknown');
+        $lines[] = "Missing Layers: " . implode(', ', (array) data_get($report, 'cad_confidence_assessment.missing_layers', []));
         $lines[] = "Plot Boundary: {$report['plot_boundary_detection']}";
         $lines[] = "Building Footprint: {$report['building_footprint_detection']}";
         $lines[] = '';
@@ -153,6 +163,11 @@ class AiReportGenerationService
             $expertItems .= '<li>' . e((string) $item) . '</li>';
         }
 
+        $cadWarnings = '';
+        foreach ((array) data_get($report, 'cad_confidence_assessment.warnings', []) as $item) {
+            $cadWarnings .= '<li>' . e((string) $item) . '</li>';
+        }
+
         return "
 <!doctype html>
 <html><head><meta charset='utf-8'><title>AI Report {$report['application_number']}</title>
@@ -163,8 +178,16 @@ class AiReportGenerationService
 <p><b>AI Analysis Status:</b> " . e((string) $report['ai_analysis_status']) . "</p>
 <p><b>AI Recommendation:</b> " . e((string) $report['ai_recommendation']) . "</p>
 <p><b>AI Confidence Score:</b> " . e((string) $report['ai_confidence_score']) . "%</p>
+<p><b>CAD Confidence Score:</b> " . e(number_format((float) data_get($report, 'cad_confidence_assessment.confidence_score', 0), 2)) . "%</p>
+<p><b>CAD Confidence Level:</b> " . e(strtoupper((string) data_get($report, 'cad_confidence_assessment.confidence_level', 'unknown'))) . "</p>
+<p><b>DXF Pattern Family:</b> " . e((string) data_get($report, 'dxf_pattern_profile.pattern_family', 'generic_dxf')) . "</p>
+<p><b>DXF Pattern Strength:</b> " . e(number_format((float) data_get($report, 'dxf_pattern_profile.pattern_strength', 0), 2)) . "</p>
+<p><b>CAD Confidence Source:</b> " . e((string) data_get($report, 'cad_confidence_assessment.dimension_source', 'unknown')) . "</p>
+<p><b>Fallback Method:</b> " . e((string) data_get($report, 'cad_confidence_assessment.fallback_method_used', 'unknown')) . "</p>
+<p><b>Missing Layers:</b> " . e(implode(', ', (array) data_get($report, 'cad_confidence_assessment.missing_layers', [])) ?: '-') . "</p>
 <p><b>Plot Boundary Detection:</b> " . e((string) $report['plot_boundary_detection']) . "</p>
 <p><b>Building Footprint Detection:</b> " . e((string) $report['building_footprint_detection']) . "</p>
+<h3>CAD Confidence Warnings</h3><ul>{$cadWarnings}</ul>
 <h3>Rule-wise Compliance</h3>
 <table><thead><tr><th>Rule</th><th>Status</th><th>Required</th><th>Actual</th></tr></thead><tbody>{$ruleRows}</tbody></table>
 <h3>Warnings</h3><ul>{$warningItems}</ul>

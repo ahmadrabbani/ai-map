@@ -7,6 +7,7 @@
 @if(session('status'))<div class="alert alert-success">{{ session('status') }}</div>@endif
 @if($errors->has('dfps_push'))<div class="alert alert-danger">{{ $errors->first('dfps_push') }}</div>@endif
 @if($errors->has('cad_analysis'))<div class="alert alert-danger">{{ $errors->first('cad_analysis') }}</div>@endif
+@if($errors->has('remarks'))<div class="alert alert-danger">{{ $errors->first('remarks') }}</div>@endif
 
 <div class="row g-3">
     <div class="col-lg-8">
@@ -53,6 +54,50 @@
         </div>
 
         <div class="card mb-3">
+            <div class="card-header">4.1 Decision Comparison</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="border rounded p-3 h-100">
+                            <div class="fw-semibold">AI Recommendation</div>
+                            <div>{{ data_get($decisionComparison, 'ai.recommendation', 'AI response not available yet') }}</div>
+                            <div class="small text-muted mt-2">{{ data_get($decisionComparison, 'ai.reasoning', 'AI response not available yet') }}</div>
+                            <div class="small text-muted mt-2">
+                                <div><strong>Confidence:</strong> {{ number_format((float) data_get($decisionComparison, 'ai.confidence_score', 0), 2) }}% ({{ strtoupper((string) data_get($decisionComparison, 'ai.confidence_level', 'unknown')) }})</div>
+                                <div><strong>DXF Pattern:</strong> {{ data_get($decisionComparison, 'ai.pattern_family', 'generic_dxf') }} ({{ number_format((float) data_get($decisionComparison, 'ai.pattern_strength', 0), 2) }})</div>
+                                <div><strong>Dimension source:</strong> {{ data_get($decisionComparison, 'ai.dimension_source', 'unknown') }}</div>
+                                <div><strong>Fallback method:</strong> {{ data_get($decisionComparison, 'ai.fallback_method_used', 'unknown') }}</div>
+                                <div><strong>Missing layers:</strong> {{ implode(', ', (array) data_get($decisionComparison, 'ai.missing_layers', [])) ?: '-' }}</div>
+                                @if(!empty(data_get($decisionComparison, 'ai.warnings', [])))
+                                    <div class="mt-2"><strong>Warnings:</strong></div>
+                                    <ul class="mb-0">
+                                        @foreach((array) data_get($decisionComparison, 'ai.warnings', []) as $warning)
+                                            <li>{{ $warning }}</li>
+                                        @endforeach
+                                    </ul>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="border rounded p-3 h-100">
+                            <div class="fw-semibold">AD ePermit Recommendation</div>
+                            <div>{{ data_get($decisionComparison, 'ad.decision', 'AD decision not submitted yet') }}</div>
+                            <div class="small text-muted mt-2">{{ data_get($decisionComparison, 'ad.comments', 'AD comments not submitted yet') }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="border rounded p-3 h-100">
+                            <div class="fw-semibold">Comparison Status</div>
+                            <div>{{ data_get($decisionComparison, 'comparison.label', 'Decision comparison not available yet') }}</div>
+                            <div class="small text-muted mt-2">{{ data_get($decisionComparison, 'comparison.note', '') }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
             <div class="card-header">5. CAD File Viewer</div>
             <div class="card-body">
                 <div><strong>Original CAD:</strong> {{ basename((string)($application->cad_file_path ?: $application->plan_file_path)) ?: '-' }}</div>
@@ -84,6 +129,25 @@
                     </a>
                 </div>
                 <div id="siteReviewPanel" class="collapse show">
+                    @php
+                        $sitePlaceSearchValue = old(
+                            'site_place_search',
+                            data_get(optional($application->siteReview)->site_review_json ?? [], 'formatted_address')
+                            ?: ($application->plot_address ?: $application->selected_address)
+                        );
+                    @endphp
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-8">
+                            <input type="text"
+                                   class="form-control"
+                                   id="site_place_search"
+                                   placeholder="Search plot or location with Google Places autocomplete"
+                                   value="{{ $sitePlaceSearchValue }}">
+                        </div>
+                        <div class="col-md-4">
+                            <div class="small text-muted pt-2">Use search if signal, current location, or coordinates are unavailable.</div>
+                        </div>
+                    </div>
                     <div id="adSiteMap"
                          data-plot-address="{{ $application->plot_address ?: $application->selected_address }}"
                          style="height:320px;" class="border rounded mb-2"></div>
@@ -109,6 +173,10 @@
                                 'view_type' => 'satellite',
                                 'latitude' => $application->siteReview->latitude ?? null,
                                 'longitude' => $application->siteReview->longitude ?? null,
+                                'place_id' => data_get(optional($application->siteReview)->site_review_json ?? [], 'place_id', ''),
+                                'place_name' => data_get(optional($application->siteReview)->site_review_json ?? [], 'place_name', ''),
+                                'formatted_address' => data_get(optional($application->siteReview)->site_review_json ?? [], 'formatted_address', ''),
+                                'place_types' => data_get(optional($application->siteReview)->site_review_json ?? [], 'place_types', []),
                                 'plot_polygon' => [],
                                 'road_sides' => [],
                                 'site_condition' => $application->siteReview->site_condition ?? 'unclear',
@@ -157,6 +225,17 @@
                     <div class="col-md-8"><input class="form-control" type="text" name="remarks" placeholder="Remarks (required for reject/observation)"></div>
                     <div class="col-12"><button class="btn btn-primary" type="submit">Save Decision</button></div>
                 </form>
+                <hr class="my-4">
+                <form method="POST" action="{{ route('admin.plan.bp.ad.push-dfps', $application) }}" class="row g-2" onsubmit="return confirm('Push this case to DFPS/internal system now?');">
+                    @csrf
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Push Remarks</label>
+                        <textarea class="form-control" name="remarks" rows="3" required placeholder="Enter the remarks that must be pushed to DFPS">{{ old('remarks', $application->ad_epermit_remarks ?? '') }}</textarea>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-success" type="submit">Push To DFPS/Internal</button>
+                    </div>
+                </form>
             </div>
         </div>
 
@@ -171,10 +250,6 @@
                 @else
                     <div class="text-muted">No DFPS push attempt yet.</div>
                 @endif
-                <form method="POST" action="{{ route('admin.plan.bp.ad.push-dfps', $application) }}" class="mt-2" onsubmit="return confirm('Push this case to DFPS/internal system now?');">
-                    @csrf
-                    <button class="btn btn-success" type="submit">Push To DFPS/Internal</button>
-                </form>
             </div>
         </div>
 
@@ -195,6 +270,10 @@
                 </ul>
             </div>
         </div>
+
+        @if($application)
+            @include('admin.building-plan.partials-applicant-chat', ['application' => $application])
+        @endif
     </div>
     <div class="col-lg-4">
         @if($legacyApplication)
@@ -214,6 +293,7 @@
     if (!mapEl) return;
     const latInput = document.getElementById('site_lat');
     const lngInput = document.getElementById('site_lng');
+    const placeSearchInput = document.getElementById('site_place_search');
     const reviewJsonEl = document.getElementById('site_review_json');
     const openSatelliteLink = document.getElementById('open_google_satellite');
     const address = (mapEl.getAttribute('data-plot-address') || '').trim();
@@ -221,15 +301,30 @@
     let mapRef = null;
     let markerRef = null;
     let pendingInit = false;
+    let placesAutocomplete = null;
 
-    function setJsonLatLng(lat, lng) {
+    function patchJson(extra = {}) {
         if (!reviewJsonEl) return;
         try {
             const json = JSON.parse(reviewJsonEl.value || '{}');
-            json.latitude = lat;
-            json.longitude = lng;
+            Object.assign(json, extra);
             reviewJsonEl.value = JSON.stringify(json, null, 2);
         } catch (e) {}
+    }
+
+    function setJsonLatLng(lat, lng) {
+        patchJson({ latitude: lat, longitude: lng });
+    }
+
+    function setJsonPlace(place) {
+        if (!place) return;
+        patchJson({
+            place_id: place.place_id || '',
+            place_name: place.name || '',
+            formatted_address: place.formatted_address || '',
+            place_types: Array.isArray(place.types) ? place.types : [],
+            search_source: 'google_places',
+        });
     }
 
     function refreshSatelliteLink(lat, lng) {
@@ -265,6 +360,23 @@
         });
     }
 
+    function applyLocation(pos, place = null) {
+        if (!mapRef) return;
+        mapRef.setCenter(pos);
+        mapRef.setZoom(18);
+        attachMarker(mapRef, pos);
+        latInput.value = pos.lat.toFixed(7);
+        lngInput.value = pos.lng.toFixed(7);
+        setJsonLatLng(pos.lat, pos.lng);
+        if (place) {
+            setJsonPlace(place);
+            if (placeSearchInput) {
+                placeSearchInput.value = place.formatted_address || place.name || placeSearchInput.value;
+            }
+        }
+        refreshSatelliteLink(pos.lat, pos.lng);
+    }
+
     function initMapAt(pos) {
         if (!(window.google && window.google.maps)) return;
         mapRef = new google.maps.Map(mapEl, {
@@ -278,6 +390,19 @@
         lngInput.value = pos.lng.toFixed(7);
         setJsonLatLng(pos.lat, pos.lng);
         refreshSatelliteLink(pos.lat, pos.lng);
+        if (placeSearchInput && window.google.maps.places && !placesAutocomplete) {
+            placesAutocomplete = new google.maps.places.Autocomplete(placeSearchInput, {
+                fields: ['place_id', 'name', 'formatted_address', 'geometry', 'types'],
+            });
+            placesAutocomplete.addListener('place_changed', function() {
+                const place = placesAutocomplete.getPlace();
+                if (!place || !place.geometry || !place.geometry.location) {
+                    return;
+                }
+                const location = place.geometry.location;
+                applyLocation({ lat: location.lat(), lng: location.lng() }, place);
+            });
+        }
     }
 
     function init() {
@@ -294,6 +419,15 @@
                 if (status === 'OK' && results && results[0] && results[0].geometry && results[0].geometry.location) {
                     const loc = results[0].geometry.location;
                     initMapAt({ lat: loc.lat(), lng: loc.lng() });
+                    if (placeSearchInput && results[0]) {
+                        placeSearchInput.value = results[0].formatted_address || address;
+                        setJsonPlace({
+                            place_id: results[0].place_id || '',
+                            name: results[0].formatted_address || address,
+                            formatted_address: results[0].formatted_address || address,
+                            types: results[0].types || [],
+                        });
+                    }
                     return;
                 }
                 initMapAt(fallback);

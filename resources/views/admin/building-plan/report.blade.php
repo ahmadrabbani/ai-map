@@ -12,6 +12,14 @@
 </div>
 
 @if($report)
+    @php
+        $cadConfidence = is_array(data_get($report, 'analysis_json.cad_confidence_assessment'))
+            ? data_get($report, 'analysis_json.cad_confidence_assessment')
+            : [];
+        $dxfPatternProfile = is_array(data_get($report, 'analysis_json.dxf_pattern_profile'))
+            ? data_get($report, 'analysis_json.dxf_pattern_profile')
+            : [];
+    @endphp
     <div class="card mb-3">
         <div class="card-header">Report Header</div>
         <div class="card-body row g-2">
@@ -19,6 +27,21 @@
             <div class="col-md-4"><strong>AI Status:</strong> {{ $report->analysis_status }}</div>
             <div class="col-md-4"><strong>AI Recommendation:</strong> {{ $report->ai_recommendation }}</div>
             <div class="col-md-4"><strong>AI Confidence:</strong> {{ $report->ai_confidence_score }}%</div>
+            <div class="col-md-4"><strong>CAD Confidence:</strong> {{ number_format((float) data_get($cadConfidence, 'confidence_score', 0), 2) }}% ({{ strtoupper((string) data_get($cadConfidence, 'confidence_level', 'unknown')) }})</div>
+            <div class="col-md-4"><strong>DXF Pattern:</strong> {{ data_get($dxfPatternProfile, 'pattern_family', 'generic_dxf') }} ({{ number_format((float) data_get($dxfPatternProfile, 'pattern_strength', 0), 2) }})</div>
+            <div class="col-md-4"><strong>Dimension Source:</strong> {{ data_get($cadConfidence, 'dimension_source', 'unknown') }}</div>
+            <div class="col-md-4"><strong>Fallback:</strong> {{ data_get($cadConfidence, 'fallback_method_used', 'unknown') }}</div>
+            <div class="col-12"><strong>Missing Layers:</strong> {{ implode(', ', (array) data_get($cadConfidence, 'missing_layers', [])) ?: '-' }}</div>
+            @if(!empty(data_get($cadConfidence, 'warnings', [])))
+                <div class="col-12">
+                    <strong>Warnings:</strong>
+                    <ul class="mb-0">
+                        @foreach((array) data_get($cadConfidence, 'warnings', []) as $warning)
+                            <li>{{ $warning }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
             <div class="col-md-8"><strong>File:</strong> {{ $application->uploaded_file_name }}</div>
             <div class="col-md-4"><strong>Textual Recommendation:</strong> {{ $textualRecommendation }}</div>
         </div>
@@ -92,8 +115,8 @@
                     @endif
                 </summary>
                 <div class="text-muted small mt-2 mb-3">
-                    These rows are parsed from CAD text overlays. Area is calculated as width x height from nearby dimension text.
-                    Keys use floor prefixes: BF, GF, FF, SF, TH.
+                    These rows are parsed from CAD text overlays. The matched category can come from the visible text or the CAD layer hint.
+                    Area is calculated as width x height from nearby dimension text. Keys use floor prefixes: BF, GF, FF, SF, TH.
                 </div>
                 @if(!empty($roomAreaTotals))
                     <div class="row g-2 mb-3">
@@ -113,11 +136,12 @@
                         <thead>
                         <tr>
                             <th>Key</th>
-                            <th>Label</th>
+                            <th>Matched Category</th>
+                            <th>Layer Hint</th>
                             <th>Floor</th>
                             <th>Width ft</th>
                             <th>Height ft</th>
-                            <th>Area sqft</th>
+                            <th>Calculated Area sqft</th>
                             <th>Dimension Text</th>
                         </tr>
                         </thead>
@@ -125,7 +149,8 @@
                         @forelse($roomAreas as $row)
                             <tr>
                                 <td><code>{{ $row['key'] ?? '-' }}</code></td>
-                                <td>{{ $row['label'] ?? '-' }}</td>
+                                <td>{{ $row['category'] ?? '-' }}</td>
+                                <td class="text-muted small">{{ $row['layer_hint'] ?? '-' }}</td>
                                 <td>{{ $row['floor'] ?? '-' }}</td>
                                 <td>{{ isset($row['width_ft']) ? number_format((float) $row['width_ft'], 2) : '-' }}</td>
                                 <td>{{ isset($row['height_ft']) ? number_format((float) $row['height_ft'], 2) : '-' }}</td>
@@ -134,7 +159,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="text-muted">No room/space dimension pairs were detected from CAD text overlays.</td>
+                                <td colspan="8" class="text-muted">No room/space dimension pairs were detected from CAD text overlays.</td>
                             </tr>
                         @endforelse
                         </tbody>

@@ -11,12 +11,13 @@ class CadTrainingLabel extends Model
     protected $fillable = [
         'cad_submission_id',
         'plot_boundary_handle','building_footprint_handle','floor_handles','front_side',
-        'layer_map','notes','verified_by','verified_at'
+        'layer_map','floor_templates','notes','verified_by','verified_at'
     ];
 
     protected $casts = [
         'layer_map' => 'array',
         'floor_handles' => 'array',
+        'floor_templates' => 'array',
         'verified_at' => 'datetime',
     ];
 

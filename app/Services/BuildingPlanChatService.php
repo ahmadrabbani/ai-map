@@ -229,12 +229,23 @@ Operational guidelines:
 5. Never claim final approval or rejection. State only approval confidence and explain that final decision rests with the concerned Directorate / competent authority.
 6. Do not give vague or generic answers. Every answer must mention the application number, the calculated confidence score, and at least two exact values from current_case_facts when available.
 7. If prior chat history conflicts with current_case_facts, use current_case_facts.
+8. If current_case_facts contains cad_confidence_assessment, use it to explain whether measurements are verified, calculated, or estimated.
+9. If current_case_facts contains dxf_pattern_profile, use the recognized pattern family and strength to explain whether the drawing is text-table driven, geometry dominant, or still ambiguous.
+10. If required marked CAD layers are missing, lower certainty and explain the reason clearly.
+11. If textual dimension layers are missing but geometry is available, say dimensions were calculated from CAD geometry or bounding boxes.
+12. If both marked layers and textual dimensions are missing, recommend manual AD ePermit verification.
 
 Approval Confidence Metric:
 - 100%: all JSON criteria are met and verified.
 - 70-90%: most criteria are met, but documentation or minor adjustments are pending.
 - Below 50%: major violations or missing critical data.
 - Always explain the score.
+
+Measurement provenance:
+- Verified measurements come from explicit textual dimension layers.
+- Calculated measurements come from CAD geometry or deterministic rule outputs.
+- Estimated measurements come from bounding box geometry or incomplete CAD entities.
+- Never present estimated measurements as final verified measurements.
 
 Response structure:
 1. Status Summary:
@@ -264,6 +275,8 @@ PROMPT;
                 'analysis_status' => $report?->analysis_status,
                 'recommendation' => $report?->ai_recommendation,
                 'confidence_score' => $report?->ai_confidence_score,
+                'cad_confidence_assessment' => data_get($report?->analysis_json ?? [], 'cad_confidence_assessment', []),
+                'dxf_pattern_profile' => data_get($report?->analysis_json ?? [], 'dxf_pattern_profile', []),
                 'rule_results' => $report?->rule_results_json,
                 'warnings' => $report?->warnings_json,
                 'expert_review_items' => $report?->expert_review_items_json,
@@ -281,6 +294,7 @@ PROMPT;
     private function currentCaseFacts(BpApplication $application): array
     {
         $report = $application->aiReport;
+        $analysis = (array) ($report?->analysis_json ?? []);
         $metrics = $this->textualMeasurements($application);
         $plotArea = $this->numeric($metrics['plot_area'] ?? null);
         $groundCovered = $this->numeric($metrics['ground_floor_covered'] ?? null);
@@ -296,6 +310,8 @@ PROMPT;
         $failedRules = array_values(array_filter($rules, fn ($row) => in_array(strtolower((string) ($row['status'] ?? '')), ['fail', 'failed'], true) || (($row['pass'] ?? null) === false)));
         $reviewRules = array_values(array_filter($rules, fn ($row) => in_array(strtolower((string) ($row['status'] ?? '')), ['needs_review', 'review', 'warn'], true)));
         $passedRules = array_values(array_filter($rules, fn ($row) => in_array(strtolower((string) ($row['status'] ?? '')), ['pass', 'passed'], true) || (($row['pass'] ?? null) === true)));
+        $cadConfidence = (array) data_get($analysis, 'cad_confidence_assessment', []);
+        $patternProfile = (array) data_get($analysis, 'dxf_pattern_profile', []);
 
         return [
             'application_number' => $application->application_number,
@@ -304,6 +320,22 @@ PROMPT;
             'uploaded_file_type' => strtoupper((string) ($application->uploaded_file_type ?: pathinfo((string) $application->uploaded_file_name, PATHINFO_EXTENSION))),
             'ai_recommendation' => $report?->ai_recommendation,
             'calculated_confidence_score' => $this->approvalConfidenceScore($application),
+            'cad_confidence_assessment' => [
+                'score' => (float) data_get($cadConfidence, 'confidence_score', data_get($analysis, 'confidence_score', 0)),
+                'level' => (string) data_get($cadConfidence, 'confidence_level', 'unknown'),
+                'missing_layers' => (array) data_get($cadConfidence, 'missing_layers', []),
+                'available_layers' => (array) data_get($cadConfidence, 'available_layers', []),
+                'fallback_method_used' => (string) data_get($cadConfidence, 'fallback_method_used', 'unknown'),
+                'dimension_source' => (string) data_get($cadConfidence, 'dimension_source', 'unknown'),
+                'warnings' => (array) data_get($cadConfidence, 'warnings', []),
+            ],
+            'dxf_pattern_profile' => [
+                'family' => (string) data_get($patternProfile, 'pattern_family', 'generic_dxf'),
+                'strength' => (float) data_get($patternProfile, 'pattern_strength', 0),
+                'text_metric_count' => (int) data_get($patternProfile, 'text_metric_count', 0),
+                'text_reference_count' => (int) data_get($patternProfile, 'text_reference_count', 0),
+                'room_area_count' => (int) data_get($patternProfile, 'room_area_count', 0),
+            ],
             'textual_measurements' => $metrics,
             'calculated_from_text' => [
                 'ground_coverage_percent' => $coverageFormula,
@@ -338,6 +370,13 @@ PROMPT;
             'Uploaded file: ' . ($facts['uploaded_file'] ?? '-') . ' (' . ($facts['uploaded_file_type'] ?? '-') . ')',
             'AI recommendation: ' . ($facts['ai_recommendation'] ?? '-'),
             'Calculated confidence score: ' . ($facts['calculated_confidence_score'] ?? 0) . '%',
+            'CAD confidence score: ' . number_format((float) data_get($facts, 'cad_confidence_assessment.score', 0), 2) . '%',
+            'CAD confidence level: ' . data_get($facts, 'cad_confidence_assessment.level', 'unknown'),
+            'CAD dimension source: ' . data_get($facts, 'cad_confidence_assessment.dimension_source', 'unknown'),
+            'CAD fallback method: ' . data_get($facts, 'cad_confidence_assessment.fallback_method_used', 'unknown'),
+            'CAD missing layers: ' . implode(', ', (array) data_get($facts, 'cad_confidence_assessment.missing_layers', [])),
+            'DXF pattern family: ' . data_get($facts, 'dxf_pattern_profile.family', 'generic_dxf'),
+            'DXF pattern strength: ' . number_format((float) data_get($facts, 'dxf_pattern_profile.strength', 0), 2),
             'Text plot area: ' . ($measurements['plot_area'] ?? '-'),
             'Text ground floor covered: ' . ($measurements['ground_floor_covered'] ?? '-'),
             'Text total floor covered: ' . ($measurements['total_floor_covered'] ?? '-'),
