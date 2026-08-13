@@ -49,9 +49,8 @@ class AdEpermitReviewController extends Controller
     public function index(Request $request)
     {
         $statusFilter = (string) $request->query('status', '');
-        $userId = $request->user()?->id;
 
-        $applications = $this->dashboardApplicationsQuery($userId, $statusFilter)
+        $applications = $this->dashboardApplicationsQuery($statusFilter)
             ->with(['siteReview', 'dfpsPushLogs'])
             ->latest('id')
             ->paginate(20)
@@ -59,7 +58,7 @@ class AdEpermitReviewController extends Controller
 
         return view('admin.building-plan.ad-dashboard', [
             'applications' => $applications,
-            'stats' => $this->dashboardStats($userId),
+            'stats' => $this->dashboardStats(),
             'statusFilter' => $statusFilter,
         ]);
     }
@@ -275,7 +274,7 @@ class AdEpermitReviewController extends Controller
         return back()->with('status', 'Imagery label saved for model training.');
     }
 
-    private function dashboardApplicationsQuery(?int $userId, string $statusFilter): Builder
+    private function dashboardApplicationsQuery(string $statusFilter): Builder
     {
         $query = PublicBuildingPlanApplication::query()
             ->whereIn('current_status', [
@@ -288,12 +287,6 @@ class AdEpermitReviewController extends Controller
                 'pushed_to_dfps',
             ]);
 
-        if ($userId) {
-            $query->whereHas('statusLogs', function (Builder $builder) use ($userId) {
-                $builder->where('action_by_user_id', $userId);
-            });
-        }
-
         $filterStatuses = self::DASHBOARD_STATUS_MAP[$statusFilter] ?? null;
         if (is_array($filterStatuses) && $filterStatuses !== []) {
             $query->whereIn('current_status', $filterStatuses);
@@ -302,7 +295,7 @@ class AdEpermitReviewController extends Controller
         return $query;
     }
 
-    private function dashboardStats(?int $userId): array
+    private function dashboardStats(): array
     {
         $base = PublicBuildingPlanApplication::query()
             ->whereIn('current_status', [
@@ -314,12 +307,6 @@ class AdEpermitReviewController extends Controller
                 'dfps_push_failed',
                 'pushed_to_dfps',
             ]);
-
-        if ($userId) {
-            $base->whereHas('statusLogs', function (Builder $builder) use ($userId) {
-                $builder->where('action_by_user_id', $userId);
-            });
-        }
 
         $counts = [];
         foreach (self::DASHBOARD_STATUS_MAP as $key => $statuses) {

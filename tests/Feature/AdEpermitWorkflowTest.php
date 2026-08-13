@@ -106,6 +106,24 @@ class AdEpermitWorkflowTest extends TestCase
             ->assertSee('CAD File Viewer');
     }
 
+    public function test_ad_dashboard_shows_system_submitted_cases_to_every_ad_officer(): void
+    {
+        $firstOfficer = $this->adUser();
+        $secondOfficer = $this->adUser();
+        $application = $this->seededApplication();
+
+        $this->actingAs($firstOfficer)
+            ->get(route('admin.plan.bp.ad.show', $application))
+            ->assertOk();
+
+        $this->actingAs($secondOfficer)
+            ->get(route('admin.plan.bp.ad.index'))
+            ->assertOk()
+            ->assertSee($application->application_no)
+            ->assertSee('Total Assigned Cases')
+            ->assertSee('1');
+    }
+
     public function test_observation_and_rejection_requirements_and_status_logs(): void
     {
         $user = $this->adUser();
@@ -193,7 +211,9 @@ class AdEpermitWorkflowTest extends TestCase
         config()->set('services.dfps.timeout', 30);
 
         $this->actingAs($user)
-            ->post(route('admin.plan.bp.ad.push-dfps', $application))
+            ->post(route('admin.plan.bp.ad.push-dfps', $application), [
+                'remarks' => 'Approved application forwarded to DFPS.',
+            ])
             ->assertSessionHasNoErrors();
 
         $application->refresh();
