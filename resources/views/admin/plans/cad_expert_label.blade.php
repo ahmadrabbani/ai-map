@@ -410,12 +410,12 @@
             </a>
             <nav class="nav">
                 <a href="/">Home</a>
-                <a href="/admin/plan/cad-compliance">CAD Compliance</a>
+                <a href="{{ url('/admin/plan/ad-epermit') }}">Dashboard</a>
                 <a href="#labels">Expert Labels</a>
                 <a href="{{ route('admin.plan.cad-layer-viewer', $submission->id) }}">Layer Viewer</a>
             </nav>
             <div class="actions">
-                <a class="btn ghost" href="{{ route('admin.plan.cad-compliance.form') }}">Back to compliance</a>
+                <a class="btn ghost" href="{{ url('/admin/plan/ad-epermit') }}">Dashboard</a>
                 <a class="btn primary" href="#labels">Open mapping</a>
             </div>
         </header>
@@ -491,9 +491,34 @@
                             @endforeach
                         </div>
                     </div>
-                    <div class="helper-strip">
-                        Editing context: <strong>{{ ucwords(str_replace('_', ' ', $floorContext)) }}</strong>.
-                        Common site and reference layers remain visible, but unrelated floor categories are hidden to reduce clutter.
+                    @php
+                        $floorOrder = ['basement' => 'Basement', 'ground_floor' => 'Ground', 'first_floor' => 'First', 'second_floor' => 'Second', 'roof' => 'Roof'];
+                        $floorKeys = array_keys($floorOrder);
+                        $currentFloorIndex = array_search($floorContext, $floorKeys, true);
+                        $currentFloorIndex = $currentFloorIndex === false ? 1 : $currentFloorIndex;
+                        $nextFloorKey = $floorKeys[min($currentFloorIndex + 1, count($floorKeys) - 1)];
+                    @endphp
+                    <div class="helper-strip" style="display:grid; gap:10px;">
+                        <div>
+                            Editing context: <strong>{{ ucwords(str_replace('_', ' ', $floorContext)) }}</strong>.
+                            Mark the current floor first, then reuse repeated component patterns on the next floor instead of rediscovering them layer by layer.
+                        </div>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            @foreach($floorOrder as $floorKey => $floorLabel)
+                                <a
+                                    href="{{ route('admin.plan.cad-expert-label.edit', ['id' => $submission->id, 'floor_context' => $floorKey]) }}"
+                                    class="pill-btn {{ $floorContext === $floorKey ? 'active' : '' }}"
+                                >
+                                    {{ $floorLabel }}
+                                </a>
+                            @endforeach
+                            <a class="pill-btn active" href="{{ route('admin.plan.cad-layer-viewer', array_merge(['id' => $submission->id], ['floor_context' => $nextFloorKey])) }}" target="_blank">
+                                Open next floor viewer
+                            </a>
+                        </div>
+                        <div class="muted">
+                            Example workflow: ground floor stairs, doors, and walls can be mapped once, then the viewer can help locate matching stair or wall layers on first and second floors.
+                        </div>
                     </div>
                     <form action="{{ route('admin.plan.cad-expert-label.store', ['id' => $submission->id]) }}" method="POST">
                         @csrf
@@ -505,7 +530,11 @@
                                 <div class="mapping-grid">
                                     @foreach($definitions as $definition)
                                         @php
-                                            $selectedLayer = old('official_layer_map.'.$definition['tag'], $currentLayerMap[$definition['tag']] ?? '');
+                                            $currentMappedValue = $currentLayerMap[$definition['tag']] ?? '';
+                                            if (is_array($currentMappedValue)) {
+                                                $currentMappedValue = implode(' | ', array_values(array_filter(array_map('trim', $currentMappedValue))));
+                                            }
+                                            $selectedLayer = old('official_layer_map.'.$definition['tag'], $currentMappedValue);
                                             $datalistId = 'layer_options_'.$definition['tag'];
                                         @endphp
                                         <div class="mapping-row">
@@ -585,6 +614,34 @@
                             <div class="muted">Use this when multiple floor polygons must be selected manually after layer mapping is complete.</div>
                         </div>
 
+                        @php
+                            $savedFloorTemplates = optional($submission->trainingLabel)->floor_templates ?? [];
+                            if (!is_array($savedFloorTemplates)) {
+                                $savedFloorTemplates = [];
+                            }
+                        @endphp
+                        <div class="field">
+                            <label><strong>Floor templates JSON</strong></label>
+                            <textarea name="floor_templates_json" id="floor_templates_json" rows="6" placeholder='{"ground_floor":{"layer_names":["ground_external_walls","ground_stairs"],"entity_handles":["1A2B"],"active_label_key":"stairs"}}'>{{ old('floor_templates_json', !empty($savedFloorTemplates) ? json_encode($savedFloorTemplates, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '') }}</textarea>
+                            <div class="muted">
+                                Saved templates let the viewer reuse a floor pattern later. Use the viewer button to capture the current floor into this JSON, or copy a saved template to the next floor.
+                            </div>
+                            @if(!empty($savedFloorTemplates))
+                                <div style="margin-top: 10px;">
+                                    <div class="muted" style="margin-bottom: 6px;">Saved floor templates</div>
+                                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                        @foreach($savedFloorTemplates as $floorKey => $template)
+                                            @php
+                                                $layerCount = count(array_filter((array)($template['layer_names'] ?? [])));
+                                                $handleCount = count(array_filter((array)($template['entity_handles'] ?? [])));
+                                            @endphp
+                                            <span class="badge">{{ ucwords(str_replace('_', ' ', $floorKey)) }}: {{ $layerCount }} layers / {{ $handleCount }} handles</span>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+
                         <button class="btn primary" type="submit">Save layer mapping</button>
                     </form>
 
@@ -640,33 +697,80 @@
 <script>
     (function () {
         const allowedOrigin = window.location.origin;
+        const floorTemplatesInput = document.getElementById('floor_templates_json');
+
+        function parseJsonInput(node) {
+            if (!node) return {};
+            const raw = (node.value || '').trim();
+            if (!raw) return {};
+            try {
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (err) {
+                return {};
+            }
+        }
+
+        function writeJsonInput(node, value) {
+            if (!node) return;
+            node.value = JSON.stringify(value || {}, null, 2);
+            node.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
         window.addEventListener('message', function (event) {
-            if (event.origin !== allowedOrigin || !event.data || event.data.type !== 'cad-layer-map-suggestion') {
+            if (event.origin !== allowedOrigin || !event.data || !event.data.type) {
                 return;
             }
 
-            const payload = event.data.payload || {};
-            const officialTag = payload.officialTag || '';
-            const layerName = payload.layerName || '';
-            if (!officialTag || !layerName) {
-                return;
-            }
-
-            const select = document.getElementById('official_layer_map_' + officialTag);
-            const input = document.getElementById('manual_layer_' + officialTag);
-            if (select) {
-                let option = Array.from(select.options).find((opt) => opt.value === layerName);
-                if (!option) {
-                    option = document.createElement('option');
-                    option.value = layerName;
-                    option.textContent = layerName + ' (mapped from viewer)';
-                    select.appendChild(option);
+            if (event.data.type === 'cad-layer-map-suggestion') {
+                const payload = event.data.payload || {};
+                const officialTag = payload.officialTag || '';
+                const layerNames = Array.isArray(payload.layerNames) ? payload.layerNames.filter(Boolean) : [];
+                const layerName = payload.layerName || layerNames[0] || '';
+                if (!officialTag || !layerName) {
+                    return;
                 }
-                select.value = layerName;
+                const layerValue = layerNames.length > 1 ? layerNames.join(' | ') : layerName;
+
+                const select = document.getElementById('official_layer_map_' + officialTag);
+                const input = document.getElementById('manual_layer_' + officialTag);
+                if (select) {
+                    let option = Array.from(select.options).find((opt) => opt.value === layerName);
+                    if (!option) {
+                        option = document.createElement('option');
+                        option.value = layerName;
+                        option.textContent = layerName + ' (mapped from viewer)';
+                        select.appendChild(option);
+                    }
+                    select.value = layerName;
+                }
+                if (input) {
+                    input.value = layerValue;
+                    input.focus();
+                }
+                return;
             }
-            if (input) {
-                input.value = layerName;
-                input.focus();
+
+            if (event.data.type === 'cad-floor-template-suggestion') {
+                const payload = event.data.payload || {};
+                const floorContext = payload.floorContext || '';
+                const template = payload.template || {};
+                if (!floorContext) {
+                    return;
+                }
+                const templates = parseJsonInput(floorTemplatesInput);
+                templates[floorContext] = {
+                    floor_context: floorContext,
+                    floor_label: payload.floorLabel || '',
+                    layer_names: Array.isArray(template.layer_names) ? template.layer_names.filter(Boolean) : [],
+                    entity_handles: Array.isArray(template.entity_handles) ? template.entity_handles.filter(Boolean) : [],
+                    selected_layer: template.selected_layer || '',
+                    active_label_key: template.active_label_key || '',
+                    source: payload.source || 'viewer',
+                    captured_at: new Date().toISOString(),
+                };
+                writeJsonInput(floorTemplatesInput, templates);
+                return;
             }
         });
     })();

@@ -1,0 +1,121 @@
+Hi everyone. In this video, we'll walk through how the LDA AI Verification Process works from start to finish. Understanding this flow will help you submit building plans correctly and see how the review happens on the back end. To cover the full process, we are going to look at 2 main stages. The first step is the Applicant's Building Plan Submission.
+
+To get started with a new building plan submission, click on the Applicant Login button on the homepage.
+
+Once the login page loads, select the CNIC field and enter your CNIC number in the required format.
+
+Next, fill in your password in the field below.
+
+Hit the Login button to access your account.
+
+You'll land on your personal dashboard, where you can see all your previous applications along with their current status.
+
+Since we're starting fresh, go ahead and click the green Submit New Building Plan button in the top right corner to begin a new application.
+
+We have successfully logged in and initiated a new submission from the dashboard.
+
+Now let's move to Uploading the Building Plan for Pre-Scrutiny, where the system reads the DWG file to auto-fill property details in the next step.
+
+To kick off the pre-scrutiny, hit the Choose File button on the Plan Upload step.
+
+From the file picker, locate your building plan in DWG, DXF, CAD, or PDF format and open it. Keep in mind, naming your file with the plot details actually helps the system auto-fill the plot, block, and scheme in the next step.
+
+Once your file is attached, go ahead and click Next to send it for verification.
+
+The Plan Verification and Pre-Scrutiny window will pop up here. This is the AI quickly evaluating the confidence and text mappings from your drawing before you move further into the wizard.
+
+Once it wraps up, click Proceed to Next Step to continue.
+
+The plan file has been uploaded and the AI pre-scrutiny is processing in the background.
+
+Let's move on to the next step, verifying the property and applicant information, where we'll confirm the details auto-filled from the uploaded plan.
+
+Once you land on Step 2 for Property Information, kick things off by clicking the Verify Property Signal button to confirm the plot details against official records.
+
+The Geo Verification Panel will pop up and automatically pinpoint the property on the map, giving you a Matched result to confirm the location is valid.
+
+Lock in this verified location by hitting the Use Verified Signal button.
+
+With the property confirmed, the modal will close, so go ahead and click Next to move forward.
+
+On Step 3 for Applicant Information, since your details are already pre-filled from your profile, simply click Next to continue.
+
+With the property and applicant details verified, we have the core information in place.
+
+Now let's move to Step 4, where we'll upload the supporting documents like the CNIC images and ownership proof to validate the application.
+
+Moving on to Step 4, this is where you'll attach all the identity and ownership paperwork. Kick things off by hitting Choose File under the CNIC Front Image section.
+
+Pick the scanned image of the front side of your CNIC from your files.
+
+Do the same for the CNIC Back Image by selecting Choose File and uploading the back side scan.
+
+Next up is the Ownership Document, which proves you have the rights to the property. Upload it using the Choose File option in that section.
+
+The Affidavit, List Document, and Supporting Documents are optional, so you can skip those for now and hit Next to head into the final step.
+
+All required supporting documents have been uploaded successfully.
+
+Now let's move to the final step: Generating and Viewing the AI Scrutiny Report, where the system automatically validates the plan against building rules and produces a detailed compliance report.
+
+Now that we're at the final step, kick off the verification by clicking the Generate AI Scrutiny Report button.
+
+Behind the scenes, the system is doing the heavy lifting for you — validating your documents, checking compliance rules against the building plan, and routing everything for review. Just give it a moment to finish.
+
+Once it's done, you'll land on the application detail page. Scroll down to see a summary of everything you've submitted.
+
+Keep scrolling to find the uploaded documents section along with the AI scrutiny result.
+
+To see what the AI actually found in your plan, hit the View AI Report button.
+
+The full AI Scrutiny Report will open up in a new tab.
+
+This report is really the heart of the pre-scrutiny process. Take your time scrolling through it — you'll see the AI's overall recommendation, confidence score, CAD data quality, text layer checks, extracted measurements like setbacks and floor coverage, and a detailed rule-by-rule breakdown showing what passed, what failed, and what needs manual review.
+
+Scroll back up to the top once you've reviewed everything.
+
+Go ahead and close this tab to head back to your application.
+
+Now let's move on to the next step, logging in to the Admin Dashboard, where the officer will review the submitted application.
+
+To kick off the administrative review, head over to the AD ePermit Officer Login page. This portal is exclusively for officers who need to review submitted cases and access the technical CAD screens.
+
+Go ahead and fill in your registered officer email address.
+
+Next up, enter your password in the field below.
+
+Once your credentials are in, hit the Login to AD ePermit Desk button to access the officer dashboard.
+
+The login credentials are now ready to be entered for the admin dashboard.
+
+Once logged in, we'll move on to accessing and reviewing the submitted application to begin the official verification process.
+
+To access and review the submitted application, find the entry you need on the AD ePermit Review Dashboard and hit the Review button next to it.
+
+This opens up the full application details. Scroll down to go through everything the applicant has submitted, from property info to the uploaded documents.
+
+The application details are now open for review.
+
+Let's move on to performing site verification and adding remarks, where we'll confirm the property location on the satellite map and record official observations.
+
+To begin the site verification, hit the View Satellite Site button under the Google Satellite Site Review section.
+
+A satellite view of the property will load up, letting you visually inspect the actual site conditions against what's been declared in the application.
+
+Once you've reviewed the imagery, scroll down to the site status dropdown and pick the option that matches what you see, in this case marking the plot as vacant.
+
+In the Site remarks field, jot down your observation about the site condition for the record.
+
+Lock in your verification by clicking the Save Site Marking JSON button.
+
+Site verification is complete and remarks have been recorded.
+
+Now let's move on to consulting the AI Report for Final Review, where we'll cross-check our findings against the AI's automated scrutiny before making a decision.
+
+To dive deeper into the AI's findings, scroll back up and hit the Open Full AI Report button.
+
+This opens up the detailed report in a new tab. Take a moment to scroll through and see the textual data compared against the AI and CAD read values, along with the pass or fail status for each compliance check.
+
+Scrolling up a bit, you can review the rule-wise compliance results, giving you a clear picture of which clauses passed and which ones failed.
+
+And that wraps up the AI report review for the final decision. You've now seen the full LDA AI verification process from the applicant's submission all the way to the admin's approval. Hope this gave you a clear picture of how it all fits together.

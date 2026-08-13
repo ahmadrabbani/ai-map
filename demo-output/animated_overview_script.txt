@@ -1,0 +1,19 @@
+1. Digital plan submission starts with CAD upload — Applicants upload DWG, DXF, CAD or PDF files. The workflow starts collecting evidence immediately.
+
+2. Pre-scrutiny reads plan confidence and mappings — The system evaluates CAD text, dimensions and confidence signals before moving to the next step.
+
+3. Property location is verified on map — Geo verification confirms the plot signal and reduces location ambiguity before review.
+
+4. Applicant data is auto-filled where possible — Applicant identity, contact information and property context are captured in a structured workflow.
+
+5. Required documents are collected before scrutiny — CNIC, ownership document and supporting files are gathered with a clear submission checklist.
+
+6. AI scrutiny produces a measurable report — The report shows confidence, extracted dimensions, text-driven measurements and rule results.
+
+7. Expert review closes gaps in CAD interpretation — Layer viewer, rule assistant and expert labels help validate complex CAD drawings before final action.
+
+8. AD ePermit sees AI and officer decisions side by side — Reviewers inspect application data, CAD analysis, satellite evidence, attachments and push status in one dashboard.
+
+9. What we are building — A transparent approval pipeline: digital intake, AI-assisted scrutiny, human validation, audit trail and system integration.
+
+10. Instance results as Applicant Can View the result right after sumbission of AI-MAP 

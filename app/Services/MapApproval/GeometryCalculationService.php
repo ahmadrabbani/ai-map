@@ -49,6 +49,21 @@ class GeometryCalculationService
         $overrides = is_array(data_get($drawing->metadata_json, 'measurement_overrides'))
             ? data_get($drawing->metadata_json, 'measurement_overrides')
             : [];
+        $textMetrics = is_array(data_get($drawing->metadata_json, 'cad_text_measurement_metrics'))
+            ? (array) data_get($drawing->metadata_json, 'cad_text_measurement_metrics')
+            : [];
+        $textPlotArea = is_numeric($textMetrics['plot_area'] ?? null) ? (float) $textMetrics['plot_area'] : null;
+        $textGroundCovered = is_numeric($textMetrics['ground_floor_covered'] ?? null) ? (float) $textMetrics['ground_floor_covered'] : null;
+        $textTotalCovered = is_numeric($textMetrics['total_floor_covered'] ?? null) ? (float) $textMetrics['total_floor_covered'] : null;
+
+        // For plans with complete textual measurements, trust the declared values first.
+        if ($textPlotArea !== null && $textPlotArea > 0) {
+            $plotArea = round($textPlotArea, 3);
+        }
+        if ($textGroundCovered !== null && $textGroundCovered >= 0) {
+            $groundArea = round($textGroundCovered, 3);
+        }
+
         $plotArea = $this->manualOverride($overrides, 'plot_area_sqft', $plotArea);
         $groundArea = $this->manualOverride($overrides, 'ground_floor_area_sqft', $groundArea);
         $basementArea = $this->manualOverride($overrides, 'basement_area_sqft', $basementArea);
@@ -56,15 +71,33 @@ class GeometryCalculationService
         $secondArea = $this->manualOverride($overrides, 'second_floor_area_sqft', $secondArea);
 
         $totalCovered = collect([$groundArea, $firstArea, $secondArea])->filter(fn ($v) => is_numeric($v))->sum();
+        if ($textTotalCovered !== null && $textTotalCovered >= 0) {
+            $totalCovered = round($textTotalCovered, 3);
+        }
         $coverage = (is_numeric($plotArea) && $plotArea > 0 && is_numeric($groundArea))
             ? round(($groundArea / $plotArea) * 100, 2)
             : null;
+        $coverageFromTextMetric = is_numeric($textMetrics['coverage_percent'] ?? null)
+            ? round((float) $textMetrics['coverage_percent'], 2)
+            : null;
+        if ($coverageFromTextMetric === null && $textPlotArea !== null && $textPlotArea > 0 && $textGroundCovered !== null) {
+            $coverageFromTextMetric = round(($textGroundCovered / $textPlotArea) * 100, 2);
+        }
+        $farFromTextMetric = is_numeric($textMetrics['far'] ?? null)
+            ? round((float) $textMetrics['far'], 4)
+            : null;
+        if ($farFromTextMetric === null && $textPlotArea !== null && $textPlotArea > 0 && $textTotalCovered !== null) {
+            $farFromTextMetric = round($textTotalCovered / $textPlotArea, 4);
+        }
         $coverageFromText = $this->groundCoveragePercentFromTextReferences(
             is_array(data_get($drawing->metadata_json, 'cad_text_references'))
                 ? (array) data_get($drawing->metadata_json, 'cad_text_references')
                 : []
         );
-        if ($coverageFromText !== null) {
+        if ($coverageFromTextMetric !== null) {
+            // Canonical metric from structured measurement rows is stronger than free-text scan.
+            $coverage = $coverageFromTextMetric;
+        } elseif ($coverageFromText !== null) {
             // Prefer explicit plan text like "Ground coverage 75%" over weak reconstructed geometry.
             $coverage = $coverageFromText;
         }
@@ -72,9 +105,24 @@ class GeometryCalculationService
         $far = (is_numeric($plotArea) && $plotArea > 0 && $totalCovered > 0)
             ? round($totalCovered / $plotArea, 4)
             : null;
+        if ($farFromTextMetric !== null) {
+            $far = $farFromTextMetric;
+        }
         $far = $this->manualOverride($overrides, 'far', $far);
 
         $setbacks = $this->setbacksFromBbox($plot?->bbox_json, $ground?->bbox_json, $unitScale, $measurementsConfirmed);
+        if (is_numeric($textMetrics['front_setback_ft'] ?? null)) {
+            $setbacks['front'] = round((float) $textMetrics['front_setback_ft'], 3);
+        }
+        if (is_numeric($textMetrics['rear_setback_ft'] ?? null)) {
+            $setbacks['rear'] = round((float) $textMetrics['rear_setback_ft'], 3);
+        }
+        if (is_numeric($textMetrics['left_setback_ft'] ?? null)) {
+            $setbacks['left'] = round((float) $textMetrics['left_setback_ft'], 3);
+        }
+        if (is_numeric($textMetrics['right_setback_ft'] ?? null)) {
+            $setbacks['right'] = round((float) $textMetrics['right_setback_ft'], 3);
+        }
         foreach (['front', 'rear', 'left', 'right'] as $side) {
             $setbacks[$side] = $this->manualOverride($overrides, $side . '_setback_ft', $setbacks[$side]);
         }
@@ -93,8 +141,8 @@ class GeometryCalculationService
         $results['total_covered_area_sqft'] = ['value' => $totalCovered ?: null, 'unit' => 'sqft', 'status' => $measurementStatus, 'sources' => ['ground_floor_covered_polygon', 'first_floor_covered_polygon', 'second_floor_covered_polygon']];
         $coverageStatus = $coverage === null
             ? 'needs_review'
-            : ($coverageFromText !== null ? 'calculated' : $measurementStatus);
-        $coverageSources = $coverageFromText !== null
+            : (($coverageFromTextMetric !== null || $coverageFromText !== null) ? 'calculated' : $measurementStatus);
+        $coverageSources = ($coverageFromTextMetric !== null || $coverageFromText !== null)
             ? ['cad_text_references', 'plot_boundary', 'ground_floor_covered_polygon']
             : ['plot_boundary', 'ground_floor_covered_polygon'];
         $results['ground_coverage_percent'] = ['value' => $coverage, 'unit' => '%', 'status' => $coverageStatus, 'sources' => $coverageSources];

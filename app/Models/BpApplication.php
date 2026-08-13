@@ -85,4 +85,9 @@ class BpApplication extends Model
     {
         return $this->belongsTo(MapDrawing::class, 'map_drawing_id');
     }
+
+    public function imageryLabel()
+    {
+        return $this->hasOne(BpImageryLabel::class, 'bp_application_id');
+    }
 }

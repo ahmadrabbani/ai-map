@@ -1,0 +1,12 @@
+Now we move to the AD ePermit officer flow, where the submitted building plan is reviewed by the administrative team.
+
+The officer starts from the AD ePermit Officer Login page. This desk is reserved for authorized reviewers who need access to submitted cases, CAD analysis, AI scrutiny results, satellite evidence, and technical review screens. The officer enters the registered email address, adds the password, and opens the AD ePermit dashboard.
+
+On the dashboard, the officer finds the submitted application and selects Review. The full case file opens, including applicant information, property details, uploaded documents, plan files, and AI-generated scrutiny results. This gives the reviewer one place to inspect the complete evidence trail.
+
+For site verification, the officer opens the Google Satellite Site Review section and selects View Satellite Site. The satellite map helps confirm the actual property condition against the submitted record. After visual inspection, the officer chooses the site status, such as vacant or constructed, adds official remarks, and saves the site marking JSON.
+
+The officer then opens the full AI report for final review. This report compares textual data, CAD-read values, extracted measurements, and compliance checks. Rule-wise results show which clauses passed, failed, or need manual review.
+
+After reviewing the application, documents, site evidence, and AI recommendation, the officer can record an observation, reject the case, or approve it. Approved cases can then be pushed forward to DFPS or the internal system with logs, attachments, and a complete audit trail.
+

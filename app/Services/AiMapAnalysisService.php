@@ -5,10 +5,16 @@ namespace App\Services;
 use App\Models\BpApplication;
 use App\Models\CadSubmission;
 use App\Models\MapDrawing;
+use App\Models\MapEntity;
+use App\Services\MapApproval\CadConfidenceEvaluatorService;
+use App\Services\MapApproval\DxfPatternProfileService;
 use App\Services\MapApproval\GeometryCalculationService;
 use App\Services\MapApproval\MapApprovalPipelineService;
 use App\Services\MapApproval\MapApprovalReportService;
 use App\Services\MapApproval\RuleValidationService;
+use App\Services\MapApproval\StructuralExtractionService;
+use App\Services\Ml\ImageryBuildSignalService;
+use App\Services\Ml\RuleRiskScoringService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -21,6 +27,11 @@ class AiMapAnalysisService
         private readonly GeometryCalculationService $geometryCalculationService,
         private readonly RuleValidationService $mapRuleValidationService,
         private readonly MapApprovalReportService $mapReportService,
+        private readonly StructuralExtractionService $structuralExtractionService,
+        private readonly CadConfidenceEvaluatorService $cadConfidenceEvaluatorService,
+        private readonly DxfPatternProfileService $dxfPatternProfileService,
+        private readonly RuleRiskScoringService $ruleRiskScoringService,
+        private readonly ImageryBuildSignalService $imageryBuildSignalService,
     ) {
     }
 
@@ -32,7 +43,7 @@ class AiMapAnalysisService
             'original_filename' => $file->getClientOriginalName(),
             'stored_dwg_path' => $ext === 'dwg' ? $storedPath : null,
             'stored_dxf_path' => $ext === 'dxf' ? $storedPath : null,
-            'ruleset_key' => '5_marla_residential',
+            'ruleset_key' => 'residential_building_approval',
             'analysis_result' => [
                 'source' => 'bp_application',
                 'bp_application_id' => $application->id,
@@ -60,6 +71,7 @@ class AiMapAnalysisService
         try {
             if ($ext === 'dwg') {
                 $dwgAbs = Storage::disk('local')->path((string) $cadSubmission->stored_dwg_path);
+                $confidenceDrawing = null;
                 $run = $this->cadComplianceService->processSubmission($cadSubmission, $dwgAbs, [
                     'allow_heuristic_fallback' => true,
                 ]);
@@ -75,26 +87,55 @@ class AiMapAnalysisService
                         $mapped = $this->mapPipelineService->mapExistingCadSubmission($cadSubmission->fresh());
                         $drawing = $mapped['drawing']->fresh('entities');
                         $this->hydrateCadTextReferencesFromLayers($drawing);
+                        $profile = $this->dxfPatternProfileService->profile($drawing);
+                        $this->dxfPatternProfileService->persist($drawing, $profile);
+                        $structural = $this->extractAndPersistStructural($drawing);
                         $geometry = $this->geometryCalculationService->calculate($drawing);
                         $semanticRules = $this->mapRuleValidationService->validate($drawing->fresh('entities'), $geometry);
                         $report = $this->mapReportService->generate($drawing->fresh(['entities', 'geometryResults', 'ruleResults']));
                         $mapDrawingId = $drawing->id;
+                        $confidenceDrawing = $drawing;
                         $rules = ! empty($semanticRules) ? $semanticRules : $rules;
                         $status = (string) ($report['status'] ?? $status);
                         $recommendation = $this->recommendationFromReportStatus($status);
                         $run['map_pipeline'] = $mapped;
                         $run['map_report'] = $report;
+                        $run['structural_extraction'] = $structural;
+                        $run['dxf_pattern_profile'] = $profile ?? [];
                     } catch (\Throwable $semanticError) {
                         $analysis['semantic_pipeline_warning'] = $semanticError->getMessage();
                     }
                 }
 
+                if (! $mapDrawingId) {
+                    $fallbackDrawing = $this->buildDwgTextFallbackDrawing($application, $cadSubmission);
+                    if ($fallbackDrawing) {
+                        $this->hydrateCadTextReferencesFromLayers($fallbackDrawing);
+                        $profile = $this->dxfPatternProfileService->profile($fallbackDrawing);
+                        $this->dxfPatternProfileService->persist($fallbackDrawing, $profile);
+                        $mapDrawingId = $fallbackDrawing->id;
+                        $confidenceDrawing = $fallbackDrawing;
+                        $analysis['dwg_text_fallback'] = 'applied';
+                    }
+                }
+
+                $analysis = $this->applyCadConfidenceAssessment($analysis, $rules, $confidenceDrawing);
+                $confidenceScore = (float) data_get($analysis, 'confidence_score', $this->confidenceFromRules($rules));
+                $analysisJson = $this->attachImagerySignal(
+                    $this->attachMlAdvisory($run, $rules),
+                    $application
+                );
+                $analysisJson = $this->applyCadConfidenceAssessment($analysisJson, $rules, $confidenceDrawing);
+
                 return [
                     'status' => $status,
                     'recommendation' => $recommendation,
-                    'confidence_score' => $this->confidenceFromRules($rules),
-                    'analysis_json' => $run,
-                    'warnings' => (array) ($analysis['warnings'] ?? []),
+                    'confidence_score' => $confidenceScore,
+                    'analysis_json' => $analysisJson,
+                    'warnings' => array_values(array_unique(array_merge(
+                        (array) ($analysis['warnings'] ?? []),
+                        (array) data_get($analysis, 'cad_confidence_assessment.warnings', [])
+                    ))),
                     'expert_review_items' => $this->expertItemsFromAnalysis($analysis, $rules),
                     'map_drawing_id' => $mapDrawingId,
                 ];
@@ -105,23 +146,39 @@ class AiMapAnalysisService
                 $mapped = $this->mapPipelineService->mapExistingCadSubmission($cadSubmission);
                 $drawing = $mapped['drawing']->fresh('entities');
                 $this->hydrateCadTextReferencesFromLayers($drawing);
+                $profile = $this->dxfPatternProfileService->profile($drawing);
+                $this->dxfPatternProfileService->persist($drawing, $profile);
+                $structural = $this->extractAndPersistStructural($drawing);
                 $geometry = $this->geometryCalculationService->calculate($drawing);
                 $this->mapRuleValidationService->validate($drawing->fresh('entities'), $geometry);
                 $report = $this->mapReportService->generate($drawing->fresh(['entities', 'geometryResults', 'ruleResults']));
 
                 $rules = (array) ($report['rules'] ?? []);
                 $status = (string) ($report['status'] ?? 'needs_expert_review');
+                $analysis = $this->applyCadConfidenceAssessment([
+                    'map_pipeline' => $mapped,
+                    'map_report' => $report,
+                    'structural_extraction' => $structural,
+                    'dxf_pattern_profile' => $profile ?? [],
+                ], $rules, $drawing);
+                $confidenceScore = (float) data_get($analysis, 'confidence_score', $this->confidenceFromRules($rules));
 
                 return [
                     'status' => $status,
                     'recommendation' => $this->recommendationFromReportStatus($status),
-                    'confidence_score' => $this->confidenceFromRules($rules),
-                    'analysis_json' => [
-                        'map_pipeline' => $mapped,
-                        'map_report' => $report,
-                    ],
-                    'warnings' => (array) ($report['expert_review_reasons'] ?? []),
-                    'expert_review_items' => (array) ($report['missing_required_entities'] ?? []),
+                    'confidence_score' => $confidenceScore,
+                    'analysis_json' => $this->attachImagerySignal(
+                        $this->attachMlAdvisory($analysis, $rules),
+                        $application
+                    ),
+                    'warnings' => array_values(array_unique(array_merge(
+                        (array) ($report['expert_review_reasons'] ?? []),
+                        (array) data_get($analysis, 'cad_confidence_assessment.warnings', [])
+                    ))),
+                    'expert_review_items' => array_values(array_unique(array_merge(
+                        (array) ($report['missing_required_entities'] ?? []),
+                        (array) data_get($analysis, 'cad_confidence_assessment.missing_layers', [])
+                    ))),
                     'map_drawing_id' => $drawing->id,
                 ];
             }
@@ -225,6 +282,189 @@ class AiMapAnalysisService
         return array_values(array_unique(array_filter($items)));
     }
 
+    private function attachMlAdvisory(array $analysisJson, array $rules): array
+    {
+        $analysisJson['ml_advisory'] = $this->ruleRiskScoringService->score($rules);
+        $analysisJson['decision_policy'] = [
+            'primary_engine' => 'strict_rule_engine',
+            'ml_role' => 'advisory_only',
+            'note' => 'ML score supports triage and confidence interpretation only. Final pass/fail stays rule-based.',
+        ];
+
+        return $analysisJson;
+    }
+
+    private function attachImagerySignal(array $analysisJson, BpApplication $application): array
+    {
+        $analysisJson['imagery_signal'] = $this->imageryBuildSignalService->score($application);
+        $analysisJson['imagery_policy'] = [
+            'role' => 'advisory_only',
+            'note' => 'Imagery signal supports triage only. Final compliance is rule-engine + expert decision.',
+        ];
+
+        return $analysisJson;
+    }
+
+    private function applyCadConfidenceAssessment(array $analysisJson, array $rules, ?MapDrawing $drawing): array
+    {
+        if (! $drawing) {
+            $analysisJson['cad_confidence_assessment'] = [
+                'confidence_score' => 0,
+                'confidence_level' => 'low',
+                'missing_layers' => ['map_drawing_missing'],
+                'available_layers' => [],
+                'fallback_method_used' => 'none',
+                'dimension_source' => 'bounding_box_estimation',
+                'warnings' => ['CAD drawing is missing, so confidence cannot be evaluated reliably.'],
+                'summary' => 'CAD drawing is missing, so confidence cannot be evaluated reliably.',
+                'score_breakdown' => [
+                    'base_score' => 100,
+                    'penalties' => [
+                        ['reason' => 'Missing drawing', 'value' => -100, 'detail' => 'Map drawing was not available.'],
+                    ],
+                    'final_score' => 0,
+                ],
+            ];
+            $analysisJson['rule_confidence_score'] = 0;
+            $analysisJson['confidence_score'] = 0;
+
+            return $analysisJson;
+        }
+
+        $assessment = $this->cadConfidenceEvaluatorService->evaluate($drawing);
+        $ruleConfidence = $this->confidenceFromRules($rules);
+        $cadConfidence = (float) ($assessment['confidence_score'] ?? 0);
+        $finalScore = empty($rules)
+            ? round($cadConfidence, 2)
+            : round(min($ruleConfidence, $cadConfidence), 2);
+
+        $assessment['rule_confidence_score'] = round($ruleConfidence, 2);
+        $assessment['final_confidence_score'] = $finalScore;
+        $assessment['summary'] = $assessment['summary'] ?? (
+            'Confidence is ' . ($assessment['confidence_level'] ?? 'low')
+            . ' because the CAD layer quality and measurement provenance were evaluated.'
+        );
+
+        $analysisJson['confidence_score'] = $finalScore;
+        $analysisJson['rule_confidence_score'] = round($ruleConfidence, 2);
+        $analysisJson['cad_confidence_assessment'] = $assessment;
+
+        return $analysisJson;
+    }
+
+    private function extractAndPersistStructural(MapDrawing $drawing): array
+    {
+        $structural = $this->structuralExtractionService->extract($drawing);
+        $metadata = is_array($drawing->metadata_json) ? $drawing->metadata_json : [];
+        $metadata['structural_extraction'] = $structural;
+        $drawing->metadata_json = $metadata;
+        $drawing->save();
+
+        return $structural;
+    }
+
+    private function buildDwgTextFallbackDrawing(BpApplication $application, CadSubmission $submission): ?MapDrawing
+    {
+        $dwgRel = (string) ($submission->stored_dwg_path ?? '');
+        if ($dwgRel === '' || ! Storage::disk('local')->exists($dwgRel)) {
+            return null;
+        }
+
+        $abs = Storage::disk('local')->path($dwgRel);
+        $binary = @file_get_contents($abs);
+        if (! is_string($binary) || $binary === '') {
+            return null;
+        }
+
+        preg_match_all('/[ -~]{4,}/', $binary, $matches);
+        $chunks = array_values(array_unique(array_map(
+            fn ($v) => trim((string) $v),
+            is_array($matches[0] ?? null) ? $matches[0] : []
+        )));
+
+        $filtered = array_values(array_filter($chunks, function (string $text): bool {
+            if (strlen($text) > 240) {
+                return false;
+            }
+            $low = strtolower($text);
+            return str_contains($low, 'plot')
+                || str_contains($low, 'block')
+                || str_contains($low, 'phase')
+                || str_contains($low, 'scheme')
+                || str_contains($low, 'street')
+                || str_contains($low, 'applicant')
+                || str_contains($low, 'owner')
+                || str_contains($low, 'cnic')
+                || str_contains($low, 'phone')
+                || str_contains($low, 'contact')
+                || str_contains($low, 'area')
+                || str_contains($low, 'coverage')
+                || str_contains($low, 'far')
+                || str_contains($low, 'setback')
+                || str_contains($low, 'marla')
+                || str_contains($low, 'sq ft')
+                || preg_match('/\b\d{1,3}\s*[\-\'xX"]\s*\d{1,3}\b/', $text) === 1;
+        }));
+
+        if (empty($filtered)) {
+            return null;
+        }
+
+        $drawing = MapDrawing::create([
+            'application_id' => $application->id,
+            'original_file_path' => $submission->stored_dwg_path,
+            'dxf_file_path' => $submission->stored_dxf_path,
+            'status' => 'mapped',
+            'mapping_status' => 'fallback_text_only',
+            'validation_status' => 'pending',
+            'metadata_json' => [
+                'cad_submission_id' => $submission->id,
+                'original_filename' => $submission->original_filename,
+                'dwg_text_fallback' => true,
+            ],
+        ]);
+
+        foreach (array_slice($filtered, 0, 700) as $idx => $text) {
+            $layer = $this->guessFallbackLayer($text);
+            MapEntity::create([
+                'map_drawing_id' => $drawing->id,
+                'handle' => 'dwg_txt_' . ($idx + 1),
+                'layer_name' => $layer,
+                'entity_type' => 'TEXT',
+                'geometry_json' => [
+                    'points' => [[(float) $idx, 0.0]],
+                    'text_content' => $text,
+                    'source' => 'dwg_binary_string_fallback',
+                ],
+                'bbox_json' => ['min_x' => (float) $idx, 'min_y' => 0, 'max_x' => (float) $idx, 'max_y' => 0],
+                'area' => 0,
+                'perimeter' => 0,
+                'is_closed' => false,
+                'confidence_score' => 55,
+                'mapping_status' => 'unmapped',
+                'mapping_source' => 'dwg_text_fallback',
+            ]);
+        }
+
+        return $drawing;
+    }
+
+    private function guessFallbackLayer(string $text): string
+    {
+        $low = strtolower($text);
+        if (str_contains($low, 'applicant') || str_contains($low, 'owner') || str_contains($low, 'cnic') || str_contains($low, 'phone')) {
+            return 'Applicant Information';
+        }
+        if (str_contains($low, 'plot') || str_contains($low, 'scheme') || str_contains($low, 'phase') || str_contains($low, 'block') || str_contains($low, 'street')) {
+            return 'Plot Information';
+        }
+        if (str_contains($low, 'submission') || str_contains($low, 'application id') || str_contains($low, 'file')) {
+            return 'Submission Information';
+        }
+
+        return 'Measurement Information';
+    }
+
     public function hydrateCadTextReferencesFromLayers(MapDrawing $drawing): void
     {
         $drawing->loadMissing('entities');
@@ -236,9 +476,12 @@ class AiMapAnalysisService
         $existingMetrics = is_array(data_get($metadata, 'cad_text_measurement_metrics'))
             ? (array) data_get($metadata, 'cad_text_measurement_metrics')
             : [];
+        $existingRoomAreas = is_array(data_get($metadata, 'cad_text_room_areas'))
+            ? (array) data_get($metadata, 'cad_text_room_areas')
+            : [];
         $hasCoreMetrics = collect(['plot_area', 'ground_floor_covered', 'total_floor_covered', 'number_of_floors', 'provided_height_ft'])
             ->every(fn ($key) => ($existingMetrics[$key] ?? null) !== null);
-        if (! empty($existing) && $hasCoreMetrics) {
+        if (! empty($existing) && $hasCoreMetrics && ! empty($existingRoomAreas)) {
             return;
         }
 
@@ -277,6 +520,7 @@ class AiMapAnalysisService
         ];
         $textByLayer = [];
         $textItemsByLayer = [];
+        $allTextItems = [];
 
         foreach ($drawing->entities as $entity) {
             $text = $this->cleanCadText((string) data_get($entity->geometry_json, 'text_content', ''));
@@ -285,8 +529,9 @@ class AiMapAnalysisService
             }
             $layer = (string) ($entity->layer_name ?? '');
             $layerNorm = strtolower(trim(preg_replace('/^\d+\s*[\.\-_\):\s]+\s*/', '', $layer)));
-            $textByLayer[$layerNorm] = $textByLayer[$layerNorm] ?? [];
-            $textByLayer[$layerNorm][] = $text;
+            $layerKey = $this->canonicalTextLayerKey($layerNorm);
+            $textByLayer[$layerKey] = $textByLayer[$layerKey] ?? [];
+            $textByLayer[$layerKey][] = $text;
             $point = data_get($entity->geometry_json, 'points.0', []);
             $item = [
                 'text' => $text,
@@ -294,8 +539,9 @@ class AiMapAnalysisService
                 'y' => is_numeric($point[1] ?? null) ? (float) $point[1] : null,
                 'layer' => $layer,
             ];
-            $textItemsByLayer[$layerNorm] = $textItemsByLayer[$layerNorm] ?? [];
-            $textItemsByLayer[$layerNorm][] = $item;
+            $textItemsByLayer[$layerKey] = $textItemsByLayer[$layerKey] ?? [];
+            $textItemsByLayer[$layerKey][] = $item;
+            $allTextItems[] = $item;
 
             $hints = [];
             if (str_contains($layerNorm, 'measurement') || str_contains($layerNorm, 'dimension') || str_contains($layerNorm, 'text')) {
@@ -426,6 +672,9 @@ class AiMapAnalysisService
         if (($plot['plot_size'] ?? null) === null && is_numeric($metrics['plot_area'] ?? null) && (float) $metrics['plot_area'] > 0) {
             $plot['plot_size'] = rtrim(rtrim((string) round(((float) $metrics['plot_area']) / 225, 2), '0'), '.') . ' Marla';
         }
+        $roomAreas = $this->roomAreasFromTextItems($allTextItems);
+        $metrics = $this->mergeMetricsFromRoomAreas($metrics, $roomAreas);
+        $metrics = $this->mergeSetbackMetricsFromNearbyText($metrics, $allTextItems);
 
         if (empty($rows)) {
             return;
@@ -434,11 +683,113 @@ class AiMapAnalysisService
         $metadata['cad_text_references'] = array_slice($rows, 0, 800);
         $metadata['cad_text_sections'] = array_values(array_slice($sections, 0, 100));
         $metadata['cad_text_measurement_metrics'] = $metrics;
+        $metadata['cad_text_room_areas'] = $roomAreas;
         $metadata['cad_text_applicant'] = $applicant;
         $metadata['cad_text_plot'] = $plot;
         $metadata['cad_text_references_updated_at'] = now()->toISOString();
         $drawing->metadata_json = $metadata;
         $drawing->save();
+    }
+
+    private function mergeMetricsFromRoomAreas(array $metrics, array $roomAreas): array
+    {
+        if (empty($roomAreas)) {
+            return $metrics;
+        }
+
+        $totalsByFloor = [];
+        foreach ($roomAreas as $row) {
+            $area = is_numeric($row['area_sqft'] ?? null) ? (float) $row['area_sqft'] : 0.0;
+            if ($area <= 0) {
+                continue;
+            }
+            $floor = strtoupper(trim((string) ($row['floor'] ?? 'GF')));
+            if ($floor === '') {
+                $floor = 'GF';
+            }
+            $totalsByFloor[$floor] = ($totalsByFloor[$floor] ?? 0.0) + $area;
+        }
+
+        if (empty($totalsByFloor)) {
+            return $metrics;
+        }
+
+        if (($metrics['ground_floor_covered'] ?? null) === null && isset($totalsByFloor['GF'])) {
+            $metrics['ground_floor_covered'] = round((float) $totalsByFloor['GF'], 4);
+        }
+        if (($metrics['total_floor_covered'] ?? null) === null) {
+            $metrics['total_floor_covered'] = round((float) array_sum($totalsByFloor), 4);
+        }
+        if (($metrics['number_of_floors'] ?? null) === null) {
+            $metrics['number_of_floors'] = count($totalsByFloor);
+        }
+
+        return $metrics;
+    }
+
+    private function mergeSetbackMetricsFromNearbyText(array $metrics, array $items): array
+    {
+        $items = array_values(array_filter($items, fn ($item) => trim((string) ($item['text'] ?? '')) !== ''));
+        if (empty($items)) {
+            return $metrics;
+        }
+
+        $dimensions = [];
+        foreach ($items as $item) {
+            $text = $this->cleanCadText((string) ($item['text'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+            $pair = $this->dimensionPairFromText($text);
+            if ($pair) {
+                $dimensions[] = array_merge($item, ['dimension' => $pair]);
+            }
+        }
+
+        if (empty($dimensions)) {
+            return $metrics;
+        }
+
+        $anchors = [];
+        foreach ($items as $item) {
+            $text = strtolower($this->cleanCadText((string) ($item['text'] ?? '')));
+            if ($text === '') {
+                continue;
+            }
+
+            if (str_contains($text, 'front') && str_contains($text, 'setback') || str_contains($text, 'front mandatory')) {
+                $anchors['front_setback_ft'][] = $item;
+            }
+            if (str_contains($text, 'rear') && str_contains($text, 'setback') || str_contains($text, 'rear mandatory')) {
+                $anchors['rear_setback_ft'][] = $item;
+            }
+            if (str_contains($text, 'left') && str_contains($text, 'setback') || str_contains($text, 'left mandatory')) {
+                $anchors['left_setback_ft'][] = $item;
+            }
+            if (str_contains($text, 'right') && str_contains($text, 'setback') || str_contains($text, 'right mandatory')) {
+                $anchors['right_setback_ft'][] = $item;
+            }
+        }
+
+        foreach (['front_setback_ft', 'rear_setback_ft', 'left_setback_ft', 'right_setback_ft'] as $key) {
+            if (($metrics[$key] ?? null) !== null) {
+                continue;
+            }
+            foreach (($anchors[$key] ?? []) as $anchor) {
+                $near = $this->nearestDimensionForLabel($anchor, $dimensions);
+                if (! $near) {
+                    continue;
+                }
+                $d = (array) ($near['dimension'] ?? []);
+                $v = is_numeric($d['width_ft'] ?? null) ? (float) $d['width_ft'] : null;
+                if ($v !== null && $v >= 0 && $v <= 100) {
+                    $metrics[$key] = round($v, 4);
+                    break;
+                }
+            }
+        }
+
+        return $metrics;
     }
 
     private function numberAfterLabel(string $text, array $labels): ?float
@@ -504,6 +855,22 @@ class AiMapAnalysisService
         $value = preg_replace('/\s+/', ' ', (string) $value);
 
         return trim((string) $value);
+    }
+
+    private function canonicalTextLayerKey(string $normalizedLayer): string
+    {
+        $v = strtolower(trim($normalizedLayer));
+        if ($v === '') {
+            return $v;
+        }
+
+        return match (true) {
+            str_contains($v, 'measurement information') => 'measurements',
+            str_contains($v, 'measurement text') => 'measurements',
+            str_contains($v, 'dimension') => 'measurements',
+            str_contains($v, 'submission information') => 'submission details',
+            default => $v,
+        };
     }
 
     private function measurementMetricsFromRows(array $items): array
@@ -654,6 +1021,241 @@ class AiMapAnalysisService
         }
 
         return $plot;
+    }
+
+    private function roomAreasFromTextItems(array $items): array
+    {
+        $items = array_values(array_filter($items, fn ($item) => trim((string) ($item['text'] ?? '')) !== ''));
+        if (empty($items)) {
+            return [];
+        }
+
+        $floor = $this->dominantFloorCode($items);
+        $labels = [];
+        $dimensions = [];
+        foreach ($items as $item) {
+            $text = $this->cleanCadText((string) ($item['text'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+            $layerHint = $this->roomCategoryFromLayerName((string) ($item['layer'] ?? ''));
+
+            $dimension = $this->dimensionPairFromText($text);
+            if ($dimension) {
+                $dimensions[] = array_merge($item, ['dimension' => $dimension]);
+            }
+
+            $category = $this->roomCategoryFromText($text) ?? $layerHint;
+            if ($category) {
+                $labels[] = array_merge($item, [
+                    'category' => $category,
+                    'label_text' => $this->normalizeRoomLabel($category . ' ' . $text),
+                    'layer_hint' => $layerHint,
+                ]);
+            }
+        }
+
+        $rows = [];
+        $counts = [];
+        foreach ($labels as $label) {
+            $near = $this->nearestDimensionForLabel($label, $dimensions);
+            if (! $near) {
+                continue;
+            }
+
+            $labelFloor = $this->floorCodeFromText((string) ($label['text'] ?? '')) ?? $floor;
+            $category = (string) $label['category'];
+            $counts[$labelFloor] = $counts[$labelFloor] ?? [];
+            $counts[$labelFloor][$category] = ($counts[$labelFloor][$category] ?? 0) + 1;
+            $serial = $counts[$labelFloor][$category];
+            $dimension = (array) ($near['dimension'] ?? []);
+            $width = (float) ($dimension['width_ft'] ?? 0);
+            $height = (float) ($dimension['height_ft'] ?? 0);
+
+            $rows[] = [
+                'key' => $labelFloor . '_' . $category . $serial,
+                'floor' => $labelFloor,
+                'category' => $category,
+                'label' => (string) ($label['label_text'] ?? $category),
+                'width_ft' => round($width, 4),
+                'height_ft' => round($height, 4),
+                'area_sqft' => round($width * $height, 4),
+                'dimension_text' => (string) ($near['text'] ?? ''),
+                'label_layer' => (string) ($label['layer'] ?? ''),
+                'dimension_layer' => (string) ($near['layer'] ?? ''),
+                'layer_hint' => (string) ($label['layer_hint'] ?? ''),
+                'x' => $label['x'] ?? null,
+                'y' => $label['y'] ?? null,
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function roomCategoryFromText(string $text): ?string
+    {
+        $low = strtolower($text);
+        $low = preg_replace('/[^a-z0-9\s]/', ' ', (string) $low);
+        $low = trim(preg_replace('/\s+/', ' ', (string) $low));
+
+        return match (true) {
+            preg_match('/\b(t\.?\s*v\.?|tv)\s*(lounge|loung|lounch)\b/i', $text) === 1,
+            str_contains($low, 'lounge') || str_contains($low, 'loung') => 'TV_LOUNGE',
+            str_contains($low, 'bed room') || str_contains($low, 'bedroom') || preg_match('/\bbed\b/i', $text) === 1 => 'ROOM',
+            preg_match('/\broom\b/i', $text) === 1 => 'ROOM',
+            str_contains($low, 'drawing') => 'DRAWING',
+            str_contains($low, 'kitchen') => 'KITCHEN',
+            str_contains($low, 'bath') || str_contains($low, 'toilet') || str_contains($low, 'wash') => 'BATH',
+            str_contains($low, 'porch') => 'PORCH',
+            str_contains($low, 'store') => 'STORE',
+            str_contains($low, 'lobby') => 'LOBBY',
+            str_contains($low, 'passage') => 'PASSAGE',
+            str_contains($low, 'stair') => 'STAIR',
+            default => null,
+        };
+    }
+
+    private function roomCategoryFromLayerName(string $layerName): ?string
+    {
+        $low = strtolower($this->normalizeRoomLabel($layerName));
+        $low = preg_replace('/[^a-z0-9\s]/', ' ', (string) $low);
+        $low = trim(preg_replace('/\s+/', ' ', (string) $low));
+
+        return match (true) {
+            str_contains($low, 'stair') => 'STAIR',
+            str_contains($low, 'bed') || str_contains($low, 'room') => 'ROOM',
+            str_contains($low, 'drawing') => 'DRAWING',
+            str_contains($low, 'kitchen') => 'KITCHEN',
+            str_contains($low, 'bath') || str_contains($low, 'toilet') || str_contains($low, 'wash') => 'BATH',
+            str_contains($low, 'porch') => 'PORCH',
+            str_contains($low, 'store') => 'STORE',
+            str_contains($low, 'lobby') => 'LOBBY',
+            str_contains($low, 'passage') => 'PASSAGE',
+            default => null,
+        };
+    }
+
+    private function normalizeRoomLabel(string $text): string
+    {
+        $value = strtoupper(trim(preg_replace('/\s+/', ' ', $text)));
+        return mb_substr($value, 0, 80);
+    }
+
+    private function dimensionPairFromText(string $text): ?array
+    {
+        $normalized = strtolower($this->normalizeDimensionText($text));
+        $normalized = str_replace(['×', '*'], 'x', $normalized);
+        $normalized = preg_replace('/\s+/', ' ', (string) $normalized);
+
+        $number = '\d+(?:\.\d+)?';
+        $patterns = [
+            '/(' . $number . ')\s*(?:\'|ft|feet)?\s*(?:-\s*(' . $number . ')\s*(?:"|in|inch|inches)?)?\s*x\s*(' . $number . ')\s*(?:\'|ft|feet)?\s*(?:-\s*(' . $number . ')\s*(?:"|in|inch|inches)?)?/i',
+            '/(' . $number . ')\s*(?:ft|feet)\s*(' . $number . ')?\s*(?:in|inch|inches)?\s*x\s*(' . $number . ')\s*(?:ft|feet)\s*(' . $number . ')?\s*(?:in|inch|inches)?/i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $normalized, $m)) {
+                $w = $this->feetInchesToFeet($m[1] ?? null, $m[2] ?? null);
+                $h = $this->feetInchesToFeet($m[3] ?? null, $m[4] ?? null);
+                if ($w > 0 && $h > 0) {
+                    return [
+                        'width_ft' => round($w, 4),
+                        'height_ft' => round($h, 4),
+                    ];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeDimensionText(string $text): string
+    {
+        $value = str_replace(['’', '`', '′', '“', '”', '″'], ["'", "'", "'", '"', '"', '"'], $text);
+
+        // CAD text often uses architectural fractions such as 9'-1½" x 11'-0".
+        $value = preg_replace_callback('/(\d+)?\s*(½|¼|¾)/u', function (array $m): string {
+            $base = isset($m[1]) && $m[1] !== '' ? (float) $m[1] : 0.0;
+            $fraction = match ($m[2]) {
+                '½' => 0.5,
+                '¼' => 0.25,
+                '¾' => 0.75,
+                default => 0.0,
+            };
+
+            return rtrim(rtrim((string) ($base + $fraction), '0'), '.');
+        }, $value) ?? $value;
+
+        $value = preg_replace_callback('/(\d+)?\s*(1\/2|1\/4|3\/4)/', function (array $m): string {
+            $base = isset($m[1]) && $m[1] !== '' ? (float) $m[1] : 0.0;
+            $fraction = match ($m[2]) {
+                '1/2' => 0.5,
+                '1/4' => 0.25,
+                '3/4' => 0.75,
+                default => 0.0,
+            };
+
+            return rtrim(rtrim((string) ($base + $fraction), '0'), '.');
+        }, $value) ?? $value;
+
+        return $value;
+    }
+
+    private function feetInchesToFeet(mixed $feet, mixed $inches): float
+    {
+        $ft = is_numeric($feet) ? (float) $feet : 0.0;
+        $in = is_numeric($inches) ? (float) $inches : 0.0;
+        return $ft + ($in / 12.0);
+    }
+
+    private function nearestDimensionForLabel(array $label, array $dimensions): ?array
+    {
+        $lx = is_numeric($label['x'] ?? null) ? (float) $label['x'] : null;
+        $ly = is_numeric($label['y'] ?? null) ? (float) $label['y'] : null;
+        if ($lx === null || $ly === null) {
+            return $dimensions[0] ?? null;
+        }
+
+        $best = null;
+        $bestScore = null;
+        foreach ($dimensions as $dimension) {
+            $dx = is_numeric($dimension['x'] ?? null) ? (float) $dimension['x'] : null;
+            $dy = is_numeric($dimension['y'] ?? null) ? (float) $dimension['y'] : null;
+            if ($dx === null || $dy === null) {
+                continue;
+            }
+
+            $score = abs($lx - $dx) + (abs($ly - $dy) * 2.5);
+            // Room names and their dimensions are usually stacked close together.
+            if (abs($lx - $dx) > 80 || abs($ly - $dy) > 35) {
+                continue;
+            }
+            if ($bestScore === null || $score < $bestScore) {
+                $best = $dimension;
+                $bestScore = $score;
+            }
+        }
+
+        return $best;
+    }
+
+    private function dominantFloorCode(array $items): string
+    {
+        $text = strtolower(implode(' ', array_map(fn ($item) => (string) ($item['text'] ?? ''), $items)));
+        return $this->floorCodeFromText($text) ?? 'GF';
+    }
+
+    private function floorCodeFromText(string $text): ?string
+    {
+        $low = strtolower($text);
+        return match (true) {
+            str_contains($low, 'basement') || preg_match('/\bbf\b/', $low) === 1 => 'BF',
+            str_contains($low, 'first floor') || preg_match('/\bff\b/', $low) === 1 => 'FF',
+            str_contains($low, 'second floor') || preg_match('/\bsf\b/', $low) === 1 => 'SF',
+            str_contains($low, 'third floor') || preg_match('/\b(th|tf)\b/', $low) === 1 => 'TH',
+            str_contains($low, 'ground floor') || preg_match('/\bgf\b/', $low) === 1 => 'GF',
+            default => null,
+        };
     }
 
     private function groupTextItemsIntoRows(array $items): array

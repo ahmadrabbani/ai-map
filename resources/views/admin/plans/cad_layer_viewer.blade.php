@@ -280,14 +280,14 @@
         </a>
         <nav class="nav">
           <a href="/">Home</a>
-          <a href="/admin/plan/cad-compliance">CAD Compliance</a>
+          <a href="{{ url('/admin/plan/ad-epermit') }}">Dashboard</a>
           <a href="{{ route('admin.plan.cad-expert-label.edit', $submission->id) }}">Expert Labels</a>
           <a href="{{ route('admin.plan.cad-planner-review', ['id' => $submission->id, 'map_drawing_id' => optional($mapDrawing)->id]) }}">Planner Review</a>
           <a href="{{ route('admin.plan.cad-layer-viewer', $submission->id) }}">Layer Viewer</a>
         </nav>
         <div class="actions">
           <a class="btn ghost" href="{{ route('admin.plan.cad-expert-label.edit', $submission->id) }}">Back to labels</a>
-          <a class="btn primary" href="/admin/plan/cad-compliance">Compliance hub</a>
+          <a class="btn primary" href="{{ url('/admin/plan/ad-epermit') }}">Dashboard</a>
         </div>
       </header>
     </div>
@@ -318,7 +318,7 @@
       entitySummary: @json($entitySummary ?? new stdClass()),
       rulesetOverview: @json($rulesetOverview ?? new stdClass()),
       tagOptions: @json($tagOptions ?? []),
-      floorContext: @json(request('floor_context', '')),
+      floorContext: @json(request('floor_context', 'ground_floor')),
       mapDrawingId: @json(optional($mapDrawing)->id),
       mapEntitiesUrl: @json(optional($mapDrawing)->id ? route('api.map-approval.entities', ['drawing' => $mapDrawing->id]) : null),
       mapSummaryUrl: @json(optional($mapDrawing)->id ? route('api.map-approval.mapping-summary', ['drawing' => $mapDrawing->id]) : null),

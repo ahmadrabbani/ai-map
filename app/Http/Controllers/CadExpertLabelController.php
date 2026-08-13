@@ -17,6 +17,7 @@ use Illuminate\Support\Collection;
 use App\Services\CadApprovalRuleService;
 use App\Services\MapApproval\GeometryCalculationService;
 use App\Services\MapApproval\MapApprovalReportService;
+use App\Services\MapApproval\DxfPatternTrainingService;
 use App\Services\MapApproval\RuleValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -27,6 +28,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CadExpertLabelController extends Controller
 {
+    public function __construct(
+        private readonly DxfPatternTrainingService $dxfPatternTrainingService,
+    ) {
+    }
+
     public function edit(Request $request, $id, CadApprovalRuleService $ruleService)
     {
         if (! $request->boolean('legacy')) {
@@ -96,6 +102,7 @@ class CadExpertLabelController extends Controller
             'plot_entity_handle' => 'nullable|string|max:255',
             'building_entity_handle' => 'nullable|string|max:255',
             'floor_handles_json' => 'nullable|string',
+            'floor_templates_json' => 'nullable|string',
             'front_side' => 'required|in:auto,north,south,east,west',
             'notes' => 'nullable|string',
             'official_layer_map' => 'nullable|array',
@@ -105,7 +112,12 @@ class CadExpertLabelController extends Controller
 
         $officialLayerMap = collect($request->input('official_layer_map', []))
             ->filter(fn ($value) => is_string($value) && trim($value) !== '')
-            ->map(fn ($value) => trim($value))
+            ->map(function ($value) {
+                $value = trim($value);
+                $layers = $this->splitLayerGroupValue($value);
+
+                return count($layers) > 1 ? $layers : $value;
+            })
             ->all();
 
         $floorHandles = null;
@@ -113,6 +125,14 @@ class CadExpertLabelController extends Controller
             $floorHandles = json_decode($data['floor_handles_json'], true);
             if (!is_array($floorHandles)) {
                 return back()->withErrors(['floor_handles_json' => 'Floor handles JSON must be a valid JSON object or array.'])->withInput();
+            }
+        }
+
+        $floorTemplates = null;
+        if (!empty($data['floor_templates_json'])) {
+            $floorTemplates = json_decode($data['floor_templates_json'], true);
+            if (!is_array($floorTemplates)) {
+                return back()->withErrors(['floor_templates_json' => 'Floor templates JSON must be a valid JSON object or array.'])->withInput();
             }
         }
 
@@ -133,12 +153,21 @@ class CadExpertLabelController extends Controller
         $data['labeled_by'] = optional($request->user())->email ?? optional($request->user())->name ?? null;
         $label->fill($data)->save();
         $this->syncTrainingLabel($submission, $label);
+        $this->dxfPatternTrainingService->captureExpertLabel($submission, $label);
 
         if ($floorHandles !== null) {
             $training = CadTrainingLabel::firstOrNew([
                 'cad_submission_id' => $submission->id,
             ]);
             $training->floor_handles = $floorHandles;
+            $training->save();
+        }
+
+        if ($floorTemplates !== null) {
+            $training = CadTrainingLabel::firstOrNew([
+                'cad_submission_id' => $submission->id,
+            ]);
+            $training->floor_templates = $floorTemplates;
             $training->save();
         }
 
@@ -212,7 +241,7 @@ class CadExpertLabelController extends Controller
     public function entities(Request $request, $id)
     {
         $submission = CadSubmission::findOrFail($id);
-        $mapDrawing = $this->resolveMapDrawing($submission, $request->query('map_drawing_id'));
+        $mapDrawing = $this->ensureCadTextMetadata($this->resolveMapDrawing($submission, $request->query('map_drawing_id')));
         $this->syncCadEntitiesForSubmission($submission, $mapDrawing);
 
         $query = CadEntity::where('cad_submission_id', $submission->id);
@@ -364,7 +393,7 @@ class CadExpertLabelController extends Controller
     public function autoSuggestMappings(Request $request, $id)
     {
         $submission = CadSubmission::findOrFail($id);
-        $mapDrawing = $this->resolveMapDrawing($submission, $request->query('map_drawing_id'));
+        $mapDrawing = $this->ensureCadTextMetadata($this->resolveMapDrawing($submission, $request->query('map_drawing_id')));
         $this->syncCadEntitiesForSubmission($submission, $mapDrawing);
 
         $layerDefinitions = $this->loadLayerDefinitions();
@@ -445,6 +474,11 @@ class CadExpertLabelController extends Controller
             ->orderBy('label_key')
             ->orderBy('id')
             ->get();
+        $mapDrawing = $this->ensureCadTextMetadata($this->resolveMapDrawing($submission, $request->query('map_drawing_id')));
+        $textReferences = is_array(data_get($mapDrawing?->metadata_json, 'cad_text_references'))
+            ? data_get($mapDrawing?->metadata_json, 'cad_text_references')
+            : [];
+        $textMetrics = $this->cadTextMeasurementMetrics($mapDrawing);
 
         $byLabel = [];
         foreach ($mappings as $mapping) {
@@ -488,6 +522,7 @@ class CadExpertLabelController extends Controller
         }
 
         $missingRequired = [];
+        $mappedLabelKeys = $this->mappedCanonicalLabelKeys($submission->id, $layerDefinitions);
         foreach ($required as $key) {
             if (empty($byLabel[$key])) {
                 $byLabel[$key] = [
@@ -499,6 +534,14 @@ class CadExpertLabelController extends Controller
                     'totals' => ['length' => 0.0, 'area' => 0.0, 'perimeter' => 0.0],
                     'source_state' => 'missing',
                 ];
+            }
+            if (($byLabel[$key]['source_state'] ?? null) === 'missing' && isset($mappedLabelKeys[$key])) {
+                $byLabel[$key]['source_state'] = 'entity_mapped';
+            }
+            if (($byLabel[$key]['source_state'] ?? null) === 'missing' && $this->hasTextEvidenceForLabel($key, $textReferences, $textMetrics)) {
+                $byLabel[$key]['source_state'] = 'text_evidence';
+            }
+            if (($byLabel[$key]['source_state'] ?? null) === 'missing') {
                 $missingRequired[] = $key;
             }
         }
@@ -618,10 +661,11 @@ class CadExpertLabelController extends Controller
         $submission = CadSubmission::findOrFail($id);
         $layerDefinitions = $this->loadLayerDefinitions();
         $required = $this->requiredLabelKeys($submission);
-        $mapDrawing = $this->resolveMapDrawing($submission, $request->query('map_drawing_id'));
+        $mapDrawing = $this->ensureCadTextMetadata($this->resolveMapDrawing($submission, $request->query('map_drawing_id')));
         $textReferences = is_array(data_get($mapDrawing?->metadata_json, 'cad_text_references'))
             ? data_get($mapDrawing?->metadata_json, 'cad_text_references')
             : [];
+        $textMetrics = $this->cadTextMeasurementMetrics($mapDrawing);
         $rows = CadExpertMarking::where('cad_submission_id', $submission->id)
             ->where('source', 'expert_drawn')
             ->orderBy('label_key')
@@ -685,8 +729,13 @@ class CadExpertLabelController extends Controller
                 $byLabel[$key]['source_state'] = 'entity_mapped';
             }
             // For text-oriented required labels (dimensions/text), allow CAD text
-            // evidence to satisfy required presence even when geometry is not confirmed.
-            if (($byLabel[$key]['source_state'] ?? null) === 'missing' && $this->hasTextEvidenceForLabel($key, $textReferences)) {
+            // and official textual measurement evidence to satisfy preliminary
+            // presence. Final approval remains with the officer, but the UI
+            // should not tell users that matched layer/text data is missing.
+            if (
+                ($byLabel[$key]['source_state'] ?? null) === 'missing'
+                && $this->hasTextEvidenceForLabel($key, $textReferences, $textMetrics)
+            ) {
                 $byLabel[$key]['source_state'] = 'text_evidence';
                 if (($byLabel[$key]['status'] ?? 'not_marked') === 'not_marked') {
                     $byLabel[$key]['status'] = 'draft';
@@ -709,6 +758,7 @@ class CadExpertLabelController extends Controller
             }, $missing)),
             'text_reference_hints' => $this->buildTextReferenceHints($textReferences, $required, $byLabel),
             ...$this->buildTextComparisonPayload($mapDrawing, $textReferences),
+            'approval_readiness' => $this->buildApprovalReadiness($byLabel, $missing, $textMetrics),
             'messages' => $this->buildExpertMarkingMessages($byLabel, $missing),
         ]);
     }
@@ -1131,12 +1181,7 @@ PROMPT;
 
     private function loadRulesForSubmission(CadSubmission $submission): array
     {
-        $rulesetKey = $submission->ruleset_key ?? '5_marla_residential';
-        $rulesetMap = [
-            '5_marla_residential' => base_path('rules/5MRulesJSON.json'),
-            'residential_building_approval' => base_path('rules/approval_rules_meta.json'),
-        ];
-        $rulesPath = $rulesetMap[$rulesetKey] ?? base_path('rules/5MRulesJSON.json');
+        $rulesPath = base_path('rules/approval_rules_meta.json');
         if (!is_file($rulesPath)) {
             return [];
         }
@@ -1198,12 +1243,7 @@ PROMPT;
 
     private function loadRulesMetadataForSubmission(CadSubmission $submission): array
     {
-        $rulesetKey = $submission->ruleset_key ?? '5_marla_residential';
-        $rulesetMap = [
-            '5_marla_residential' => base_path('rules/5MRulesJSON.json'),
-            'residential_building_approval' => base_path('rules/approval_rules_meta.json'),
-        ];
-        $rulesPath = $rulesetMap[$rulesetKey] ?? base_path('rules/5MRulesJSON.json');
+        $rulesPath = base_path('rules/approval_rules_meta.json');
         if (! is_file($rulesPath)) {
             return [];
         }
@@ -1255,6 +1295,19 @@ PROMPT;
             ];
         }
 
+        if (empty($training->floor_templates) && ! empty($label->layer_map_json)) {
+            $decoded = json_decode($label->layer_map_json, true);
+            if (is_array($decoded)) {
+                $training->floor_templates = [
+                    'ground_floor' => [
+                        'layer_map' => $decoded,
+                        'layer_names' => $this->extractLayerNamesFromMap($decoded),
+                        'captured_from' => 'label_map',
+                    ],
+                ];
+            }
+        }
+
         $training->save();
     }
 
@@ -1287,6 +1340,39 @@ PROMPT;
         }
 
         return $layerMap;
+    }
+
+    private function splitLayerGroupValue(string $value): array
+    {
+        $parts = preg_split('/\s*(?:\||,|;|\n)\s*/', $value) ?: [];
+        return array_values(array_filter(array_map('trim', $parts), fn ($item) => $item !== ''));
+    }
+
+    private function extractLayerNamesFromMap(array $layerMap): array
+    {
+        $names = [];
+
+        foreach ($layerMap as $value) {
+            if (is_string($value)) {
+                foreach ($this->splitLayerGroupValue($value) as $part) {
+                    $names[] = $part;
+                }
+                continue;
+            }
+
+            if (is_array($value)) {
+                foreach ($value as $item) {
+                    if (! is_string($item)) {
+                        continue;
+                    }
+                    foreach ($this->splitLayerGroupValue($item) as $part) {
+                        $names[] = $part;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter(array_map('trim', $names))));
     }
 
     private function normalizeFrontSideForTraining(?string $frontSide): ?string
@@ -1384,6 +1470,15 @@ PROMPT;
             }
         }
 
+        foreach ($map as $key => $value) {
+            if (is_string($value)) {
+                $layers = $this->splitLayerGroupValue($value);
+                if (count($layers) > 1) {
+                    $map[$key] = $layers;
+                }
+            }
+        }
+
         if (! empty($label->plot_layer) && empty($map['plot_boundary'])) {
             $map['plot_boundary'] = $label->plot_layer;
         }
@@ -1407,7 +1502,17 @@ PROMPT;
     {
         foreach ($preferredTags as $tag) {
             if (! empty($layerMap[$tag])) {
-                return $layerMap[$tag];
+                $value = $layerMap[$tag];
+                if (is_array($value)) {
+                    foreach ($value as $candidate) {
+                        if (is_string($candidate) && trim($candidate) !== '') {
+                            return trim($candidate);
+                        }
+                    }
+                    continue;
+                }
+
+                return is_string($value) ? trim($value) : null;
             }
         }
 
@@ -1874,6 +1979,49 @@ PROMPT;
                     $mapped[$canonical] = true;
                 }
             });
+
+        $label = CadExpertLabel::where('cad_submission_id', $submissionId)->first();
+        if ($label) {
+            foreach ($this->currentLayerMap($label) as $layerNameOrTag => $row) {
+                $candidate = null;
+                if (is_array($row)) {
+                    $candidate = trim((string) ($row['tag'] ?? ''));
+                } elseif (is_string($row) && trim($row) !== '') {
+                    // Legacy map shape was semantic_tag => CAD layer name.
+                    $candidate = (string) $layerNameOrTag;
+                }
+
+                if ($candidate !== null && $candidate !== '') {
+                    $canonical = $this->canonicalLabelKey($candidate, $layerDefinitions);
+                    if ($canonical) {
+                        $mapped[$canonical] = true;
+                    }
+                }
+
+                $layerNames = [];
+                if (is_array($row)) {
+                    $rawLayer = $row['layer'] ?? $layerNameOrTag;
+                    $layerNames = is_array($rawLayer) ? $rawLayer : $this->splitLayerGroupValue((string) $rawLayer);
+                    if (empty($layerNames) && is_string($rawLayer) && trim($rawLayer) !== '') {
+                        $layerNames = [trim($rawLayer)];
+                    }
+                } elseif (is_string($row) && trim($row) !== '') {
+                    $layerNames = $this->splitLayerGroupValue((string) $row);
+                    if (empty($layerNames)) {
+                        $layerNames = [trim((string) $row)];
+                    }
+                }
+
+                // Trust all official CAD layer names in the group as a fallback.
+                foreach ($layerNames as $layerName) {
+                    $layerCanonical = $this->canonicalLabelKey((string) $layerName, $layerDefinitions);
+                    if ($layerCanonical) {
+                        $mapped[$layerCanonical] = true;
+                    }
+                }
+            }
+        }
+
         return $mapped;
     }
 
@@ -1999,23 +2147,22 @@ PROMPT;
             if (($row['source_state'] ?? null) === 'expert_confirmed') {
                 $messages[] = "{$row['label_name']} confirmed. Area {$area}, Perimeter {$perimeter}, Length {$length}.";
             } elseif (($row['source_state'] ?? null) === 'entity_mapped') {
-                $messages[] = "{$row['label_name']} has mapped CAD entities. Expert confirmation is still recommended.";
+                $messages[] = "{$row['label_name']} is available from the matched CAD layer/entity mapping. Officer confirmation is optional unless the drawing looks incorrect.";
             } elseif (($row['source_state'] ?? null) === 'text_evidence') {
-                $messages[] = "{$row['label_name']} satisfied by CAD text evidence. Geometry confirmation is optional for this label.";
+                $messages[] = "{$row['label_name']} is supported by textual data from the CAD measurement/table layers.";
             }
         }
         foreach ($missing as $required) {
             $labelName = (string) data_get($byLabel, $required . '.label_name', $required);
-            $messages[] = "{$labelName} is required but not confirmed.";
+            $messages[] = "{$labelName} still needs layer mapping, textual evidence, or officer marking.";
         }
         return $messages;
     }
 
-    private function hasTextEvidenceForLabel(string $labelKey, array $textReferences): bool
+    private function hasTextEvidenceForLabel(string $labelKey, array $textReferences, array $textMetrics = []): bool
     {
-        // Only allow text evidence to satisfy text-centric requirements.
-        if (! in_array($labelKey, ['dimensions', 'text'], true)) {
-            return false;
+        if ($this->hasMetricEvidenceForLabel($labelKey, $textMetrics)) {
+            return true;
         }
 
         foreach ($textReferences as $row) {
@@ -2029,6 +2176,120 @@ PROMPT;
         }
 
         return false;
+    }
+
+    private function cadTextMeasurementMetrics(?MapDrawing $mapDrawing): array
+    {
+        if (! $mapDrawing) {
+            return [];
+        }
+
+        $metadata = is_array($mapDrawing->metadata_json) ? $mapDrawing->metadata_json : [];
+        $metrics = data_get($metadata, 'cad_text_measurement_metrics');
+        return is_array($metrics) ? $metrics : [];
+    }
+
+    private function ensureCadTextMetadata(?MapDrawing $mapDrawing): ?MapDrawing
+    {
+        if (! $mapDrawing) {
+            return null;
+        }
+
+        $metadata = is_array($mapDrawing->metadata_json) ? $mapDrawing->metadata_json : [];
+        $hasReferences = is_array(data_get($metadata, 'cad_text_references')) && count((array) data_get($metadata, 'cad_text_references')) > 0;
+        $hasMetrics = is_array(data_get($metadata, 'cad_text_measurement_metrics'));
+        if ($hasReferences && $hasMetrics) {
+            return $mapDrawing;
+        }
+
+        try {
+            app(\App\Services\AiMapAnalysisService::class)->hydrateCadTextReferencesFromLayers($mapDrawing);
+            return $mapDrawing->fresh() ?: $mapDrawing;
+        } catch (\Throwable $e) {
+            report($e);
+            return $mapDrawing;
+        }
+    }
+
+    private function hasMetricEvidenceForLabel(string $labelKey, array $metrics): bool
+    {
+        $hasAnyMetric = count(array_filter($metrics, fn ($value) => $value !== null && $value !== '')) > 0;
+
+        return match ($labelKey) {
+            'plot_boundary' => $this->hasNumericMetric($metrics, ['plot_area', 'plot_area_sqft', 'plot_area_kanal', 'plot_area_marla']),
+            'front_building_line' => $this->hasNumericMetric($metrics, ['front_setback_ft', 'front_setback']),
+            'rear_building_line' => $this->hasNumericMetric($metrics, ['rear_setback_ft', 'rear_setback']),
+            'side_building_line' => $this->hasNumericMetric($metrics, ['left_setback_ft', 'right_setback_ft', 'side_setback_ft', 'left_setback', 'right_setback']),
+            'external_walls' => $this->hasNumericMetric($metrics, ['ground_floor_covered', 'ground_floor_area_sqft', 'total_floor_covered', 'total_floor_area_sqft']),
+            'dimensions', 'text' => $hasAnyMetric,
+            default => false,
+        };
+    }
+
+    private function hasNumericMetric(array $metrics, array $keys): bool
+    {
+        foreach ($keys as $key) {
+            $value = data_get($metrics, $key);
+            if (is_numeric($value) && (float) $value > 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function buildApprovalReadiness(array $byLabel, array $missing, array $textMetrics): array
+    {
+        $plotArea = $this->firstNumericMetric($textMetrics, ['plot_area', 'plot_area_sqft']);
+        $groundCovered = $this->firstNumericMetric($textMetrics, ['ground_floor_covered', 'ground_floor_area_sqft']);
+        $totalCovered = $this->firstNumericMetric($textMetrics, ['total_floor_covered', 'total_floor_area_sqft']);
+        $coverageText = $this->firstNumericMetric($textMetrics, ['coverage_percent', 'ground_coverage_percent']);
+        $farText = $this->firstNumericMetric($textMetrics, ['far']);
+
+        $coverageFormula = ($plotArea && $groundCovered) ? round(($groundCovered / $plotArea) * 100, 2) : null;
+        $farFormula = ($plotArea && $totalCovered) ? round($totalCovered / $plotArea, 4) : null;
+
+        $messages = [];
+        if ($plotArea && $groundCovered) {
+            $messages[] = "Textual measurements found: plot area {$plotArea}, ground floor covered {$groundCovered}, coverage {$coverageFormula}%.";
+        }
+        if ($plotArea && $totalCovered) {
+            $messages[] = "FAR from textual data: total floor covered {$totalCovered} / plot area {$plotArea} = {$farFormula}.";
+        }
+
+        $coverageClear = $coverageFormula !== null && $coverageFormula <= 75.0;
+        $farClear = $farFormula !== null && $farFormula <= 2.3;
+        if ($coverageClear && $farClear) {
+            $messages[] = 'Textual data supports preliminary clearance for coverage and FAR. Final approval remains with the competent authority.';
+        } elseif ($coverageFormula !== null || $farFormula !== null) {
+            $messages[] = 'Textual data was read, but one or more formula checks need officer review.';
+        }
+
+        $mappedOrTextCount = count(array_filter($byLabel, fn ($row) => in_array(($row['source_state'] ?? 'missing'), ['expert_confirmed', 'entity_mapped', 'text_evidence'], true)));
+        $blockingCount = count($missing);
+
+        return [
+            'status' => $blockingCount === 0 && ($coverageClear || $farClear) ? 'preliminary_clear' : ($blockingCount === 0 ? 'layer_text_available' : 'needs_review'),
+            'blocking_count' => $blockingCount,
+            'mapped_or_text_count' => $mappedOrTextCount,
+            'coverage_percent_formula' => $coverageFormula,
+            'coverage_percent_text' => $coverageText,
+            'far_formula' => $farFormula,
+            'far_text' => $farText,
+            'messages' => $messages,
+        ];
+    }
+
+    private function firstNumericMetric(array $metrics, array $keys): ?float
+    {
+        foreach ($keys as $key) {
+            $value = data_get($metrics, $key);
+            if (is_numeric($value)) {
+                return round((float) $value, 4);
+            }
+        }
+
+        return null;
     }
 
     private function deterministicAssistantReply(string $question, array $payload): string

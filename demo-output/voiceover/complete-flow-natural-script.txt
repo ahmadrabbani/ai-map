@@ -1,0 +1,14 @@
+This video gives a complete overview of the LDA AI Verification Process, from applicant submission to AD ePermit review.
+
+The process starts when the applicant opens the portal and logs in with CNIC and password. From the dashboard, the applicant selects Submit New Building Plan to begin a fresh application.
+
+The first step is plan upload. The applicant attaches the building plan file in DWG, DXF, CAD, or PDF format. The system starts pre-scrutiny immediately, reading drawing text, confidence signals, plot details, dimensions, and CAD mappings. When the pre-check is ready, the applicant moves to property verification.
+
+In property verification, the Geo Verification Panel checks the location signal on the map and confirms whether the plot details match. After that, applicant information is reviewed, required documents are uploaded, including CNIC and ownership proof, and the final AI scrutiny report is generated.
+
+The AI report summarizes the recommendation, confidence score, CAD data quality, extracted measurements, setbacks, coverage, and rule-wise pass, fail, or manual review results. The applicant can view the report and track the application status.
+
+Once submitted, the case moves to the AD ePermit officer desk. The officer logs in, opens the review dashboard, and selects the submitted application. The officer reviews applicant details, documents, plan files, AI results, and the full evidence trail.
+
+For site verification, the officer opens the satellite review, checks the actual property condition, records site status and remarks, then saves the site marking. Finally, the officer reviews the AI report, compares it with official observations, and records an observation, rejection, or approval. Approved cases can be pushed forward to DFPS or the internal system with logs, attachments, and audit history.
+

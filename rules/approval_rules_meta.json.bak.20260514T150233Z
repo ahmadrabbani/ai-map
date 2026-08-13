@@ -1,0 +1,359 @@
+{
+    "ruleset": "residential_building_approval",
+    "building_type": "residential",
+    "source_documents": [
+        {
+            "id": "lda_bzr_2019",
+            "title": "LDA Building and Zoning Regulations 2019 (Amended 2020)",
+            "kind": "local_regulation",
+            "status": "primary"
+        },
+        {
+            "id": "pec_fire_2016",
+            "title": "Pakistan Engineering Council Fire Safety Provisions 2016",
+            "kind": "national_code",
+            "status": "referenced"
+        }
+    ],
+    "applicability_scope": {
+        "applicable_to_all_plot_sizes": true,
+        "applicable_to_every_floor": true,
+        "evaluation_model": "conditional_activation",
+        "precedence_order": [
+            "special_area_overlay",
+            "express_local_clause",
+            "external_code_hook",
+            "base_rule_default"
+        ],
+        "note": "The engine can evaluate every plot and every floor, but each rule activates only when its own conditions are met."
+    },
+    "canonical_units": {
+        "length": "ft",
+        "area": "sqft",
+        "ratio": "far",
+        "capacity": "gallon"
+    },
+    "definitions": [
+        {
+            "term": "building_height",
+            "meaning": "Height from crown of road to top of parapet wall.",
+            "source_ref": "Clause 1.1 / supplied PDF p.3"
+        },
+        {
+            "term": "far",
+            "meaning": "Aggregate covered area divided by total plot area.",
+            "source_ref": "Clause 1.1 / supplied PDF p.5"
+        },
+        {
+            "term": "ground_coverage",
+            "meaning": "Ground floor covered area as a percentage of total plot area.",
+            "source_ref": "Residential controls / supplied PDF pp.13-14"
+        }
+    ],
+    "rule_types": [
+        "setback",
+        "coverage",
+        "far",
+        "height_limit",
+        "storeys",
+        "submission",
+        "sanitation",
+        "fire_safety",
+        "vertical_circulation"
+    ],
+    "plot_size_categories": {
+        "5_marla": {
+            "label": "5 Marla",
+            "basement_required": false,
+            "ground_floor_rules": [
+                {
+                    "id": "SETBACK_FRONT",
+                    "type": "setback",
+                    "title": "Front setback requirement",
+                    "value_ft": 5,
+                    "operator": "<=",
+                    "description": "Maximum 5 ft front setback for 5 Marla in approved schemes."
+                },
+                {
+                    "id": "SETBACK_REAR",
+                    "type": "setback",
+                    "title": "Rear setback requirement",
+                    "value_ft": 5,
+                    "operator": "<=",
+                    "description": "Maximum 5 ft rear setback for 5 Marla residential plots."
+                },
+                {
+                    "id": "SETBACK_SIDE",
+                    "type": "setback",
+                    "title": "Side setback requirement",
+                    "value_ft": 0,
+                    "operator": "==",
+                    "description": "No side setback required for 5 Marla plots in approved schemes."
+                },
+                {
+                    "id": "GROUND_COVERAGE",
+                    "type": "coverage",
+                    "title": "Maximum ground coverage",
+                    "value_percent": 75,
+                    "operator": "<=",
+                    "description": "Ground floor may cover maximum 75% of plot area."
+                },
+                {
+                    "id": "FAR_LIMIT",
+                    "type": "far",
+                    "title": "Maximum Floor Area Ratio",
+                    "value": 2.3,
+                    "operator": "<=",
+                    "description": "Total covered area of all floors shall not exceed FAR 1:2.3."
+                },
+                {
+                    "id": "MAX_STOREYS",
+                    "type": "storeys",
+                    "title": "Maximum number of storeys",
+                    "value": 3,
+                    "operator": "<=",
+                    "description": "Maximum of Ground + First + Second storey allowed."
+                },
+                {
+                    "id": "MAX_HEIGHT",
+                    "type": "height",
+                    "title": "Maximum building height",
+                    "value_ft": 38,
+                    "operator": "<=",
+                    "description": "Total height of building shall not exceed 38 ft."
+                },
+                {
+                    "id": "STOREY_CLEAR_HEIGHT",
+                    "type": "storey_height",
+                    "title": "Minimum clear height per storey",
+                    "value_ft": 9.5,
+                    "operator": ">=",
+                    "description": "Each storey (except basement) must have minimum 9 ft 6 in clear height."
+                },
+                {
+                    "id": "PORCH_LENGTH",
+                    "type": "porch",
+                    "title": "Maximum porch length",
+                    "value_ft": 20,
+                    "operator": "<=",
+                    "description": "Car porch length must not exceed 20 ft."
+                },
+                {
+                    "id": "PORCH_ROOM_NOT_ALLOWED",
+                    "type": "porch",
+                    "title": "Room above porch prohibition",
+                    "value": false,
+                    "operator": "==",
+                    "description": "Room above porch is not allowed because 5 ft side space does not exist."
+                },
+                {
+                    "id": "REAR_TOILET_AREA",
+                    "type": "ancillary",
+                    "title": "Rear toilet maximum area",
+                    "value_sqft": 40,
+                    "operator": "<=",
+                    "description": "Rear corner toilet/bath may not exceed 40 sq ft area."
+                },
+                {
+                    "id": "REAR_TOILET_HEIGHT",
+                    "type": "ancillary",
+                    "title": "Rear toilet maximum height",
+                    "value_ft": 8,
+                    "operator": "<=",
+                    "description": "Rear corner toilet/bath height may not exceed 8 ft."
+                }
+            ]
+        },
+        "10_marla": {
+            "label": "10 Marla",
+            "basement_required": false
+        },
+        "above_10_marla": {
+            "label": "Above 10 Marla",
+            "basement_required": true
+        },
+        "custom": {
+            "label": "Custom",
+            "basement_required_when_area_gt_sqft": 2250
+        }
+    },
+    "required_plans": {
+        "ground": {
+            "required": true,
+            "label": "Ground Floor Plan"
+        },
+        "basement": {
+            "required": false,
+            "required_when": {
+                "plot_size_category": "above_10_marla"
+            },
+            "label": "Basement Plan"
+        },
+        "first": {
+            "required": false,
+            "label": "First Floor Plan"
+        },
+        "second": {
+            "required": false,
+            "label": "Second Floor Plan"
+        },
+        "roof": {
+            "required": false,
+            "label": "Roof Plan"
+        },
+        "services": {
+            "required": false,
+            "label": "Services Plan"
+        }
+    },
+    "final_report": {
+        "generate_even_if_expert_review_required": true,
+        "allow_submit_when_status": ["ready_for_submission"]
+    },
+    "required_documents": [
+        {
+            "id": "document.water_supply_sewerage_drainage_plan",
+            "label": "Water supply, sewerage, and drainage plan"
+        },
+        {
+            "id": "document.structural_drawings",
+            "label": "Structural drawings"
+        },
+        {
+            "id": "document.electricity_safety_plan",
+            "label": "Electricity safety plan"
+        },
+        {
+            "id": "document.fire_safety_plan",
+            "label": "Fire safety plan"
+        }
+    ],
+    "evaluation_flow": [
+        "Normalise units for plot and floor data.",
+        "Derive context such as plot band, FAR, coverage, storeys, floor roles, and use mix.",
+        "Select active rules through conditional activation.",
+        "Resolve precedence using overlays, local clauses, external hooks, then defaults.",
+        "Evaluate plot-wide metrics before floor-level checks.",
+        "Emit pass, warn, or fail with clause references and measured values."
+    ],
+    "comparison_matrix": [
+        {
+            "plot_bucket": "small",
+            "ground_floor": "Tight envelope with highest coverage bands and earliest height limits.",
+            "mid_floors": "Checks focus on clear height, stairs, and room/layout predicates.",
+            "upper_floors": "Overall caps on storeys and height dominate compliance."
+        },
+        {
+            "plot_bucket": "medium",
+            "ground_floor": "Setbacks widen and ground coverage drops compared with small plots.",
+            "mid_floors": "Parking, lift, disabled-access, and fire checks activate more often.",
+            "upper_floors": "Emergency stairs, hydrants, and stability submissions become important."
+        },
+        {
+            "plot_bucket": "large",
+            "ground_floor": "Largest setbacks and lowest residential coverage percentages apply.",
+            "mid_floors": "Multi-storey fire, lift, and service-floor compliance dominate review.",
+            "upper_floors": "High-rise pathways require local zoning plus external-code hooks."
+        }
+    ],
+    "implementation_assumptions": [
+        "Applicable to all plot sizes and floors means evaluable for all, not that every clause always applies.",
+        "Mixed-use proposals should be decomposed into separate use components and then recombined.",
+        "Where the regulation delegates to other codes, the engine should emit external-code tasks instead of inventing local numeric limits.",
+        "Special-area overlays should be supported as separate rule packs."
+    ],
+    "normalized_rules": [
+        {
+            "id": "R1_RESIDENTIAL_APPROVED_SCHEME_ENVELOPE",
+            "title": "Approved-scheme residential storeys, coverage, height and FAR by plot size",
+            "rule_type": "height_limit",
+            "scope": "building",
+            "applicability": {
+                "zones": ["residential"],
+                "subzones": ["approved_scheme"],
+                "floor_selector": {
+                    "type": "all"
+                }
+            },
+            "evaluation": {
+                "mode": "band_lookup",
+                "result_fields": [
+                    "max_storeys_excluding_basement",
+                    "max_ground_coverage_percent",
+                    "max_height_ft",
+                    "max_far"
+                ],
+                "bands": [
+                    {
+                        "when": {
+                            "all_of": [
+                                {"subject": "plot_area_sqft", "operator": "<", "value": 1125}
+                            ]
+                        },
+                        "requirements": [
+                            {"subject": "max_storeys_excluding_basement", "operator": "=", "value": 3},
+                            {"subject": "max_ground_coverage_percent", "operator": "=", "value": 80},
+                            {"subject": "max_height_ft", "operator": "=", "value": 38, "unit": "ft"},
+                            {"subject": "max_far", "operator": "=", "value": 2.4, "unit": "far"}
+                        ]
+                    },
+                    {
+                        "when": {
+                            "all_of": [
+                                {"subject": "plot_area_sqft", "operator": ">=", "value": 1125},
+                                {"subject": "plot_area_sqft", "operator": "<", "value": 2250}
+                            ]
+                        },
+                        "requirements": [
+                            {"subject": "max_storeys_excluding_basement", "operator": "=", "value": 3},
+                            {"subject": "max_ground_coverage_percent", "operator": "=", "value": 75},
+                            {"subject": "max_height_ft", "operator": "=", "value": 38, "unit": "ft"},
+                            {"subject": "max_far", "operator": "=", "value": 2.3, "unit": "far"}
+                        ]
+                    },
+                    {
+                        "when": {
+                            "all_of": [
+                                {"subject": "plot_area_sqft", "operator": ">=", "value": 2250},
+                                {"subject": "plot_area_sqft", "operator": "<", "value": 9000}
+                            ]
+                        },
+                        "requirements": [
+                            {"subject": "max_storeys_excluding_basement", "operator": "=", "value": 4},
+                            {"subject": "max_ground_coverage_percent", "operator": "=", "value": "70_to_60_by_band"},
+                            {"subject": "max_height_ft", "operator": "=", "value": 45, "unit": "ft"},
+                            {"subject": "max_far", "operator": "=", "value": "2.8_to_2.4_by_band", "unit": "far"}
+                        ]
+                    }
+                ]
+            },
+            "source_refs": [
+                "Clauses 2.2.2-2.2.3 / supplied PDF pp.13-14"
+            ]
+        },
+        {
+            "id": "R2_SUBMISSION_PACKAGE",
+            "title": "Mandatory submission package for approval",
+            "rule_type": "submission",
+            "scope": "building",
+            "applicability": {
+                "zones": ["residential", "commercial", "industrial", "public", "mixed_use"],
+                "floor_selector": {
+                    "type": "all"
+                }
+            },
+            "evaluation": {
+                "mode": "document_requirement",
+                "requirements": [
+                    {"subject": "document.water_supply_sewerage_drainage_plan", "operator": "exists", "value": true},
+                    {"subject": "document.structural_drawings", "operator": "exists", "value": true},
+                    {"subject": "document.electricity_safety_plan", "operator": "exists", "value": true},
+                    {"subject": "document.fire_safety_plan", "operator": "exists", "value": true}
+                ]
+            },
+            "source_refs": [
+                "Clause 7.1 / supplied PDF p.51"
+            ]
+        }
+    ]
+}

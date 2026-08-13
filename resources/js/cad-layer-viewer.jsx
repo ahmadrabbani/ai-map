@@ -231,6 +231,30 @@ function visibleForViewMode(layer, info, mode) {
   return isMappedApprovalInfo({ ...(info || {}), layer }) || (isApprovalLayer(layer) && !isReferenceLayer(layer));
 }
 
+function visibleForFloorContext(layer, info, floorContext) {
+  const layerText = normalizeLayerLabel(layer);
+  const tagText = normalizeLayerLabel(info?.tag || "");
+  const detectedFloor = detectFloorToken(layerText || tagText);
+  const currentFloor = floorContext || "ground_floor";
+  const commonLayer = isReferenceLayer(layerText) || isApprovalLayer(layerText) || isMappedApprovalInfo({ ...(info || {}), layer });
+
+  if (!detectedFloor) {
+    return true;
+  }
+
+  if (detectedFloor === currentFloor) {
+    return true;
+  }
+
+  // Allow generic non-floor reference layers, but hide explicit other-floor layers.
+  const currentToken = detectFloorToken(currentFloor);
+  if (currentToken && detectedFloor !== currentToken) {
+    return false;
+  }
+
+  return commonLayer;
+}
+
 function entityVisibleForViewMode(entity, mode) {
   const layer = entity?.layer_name || entity?.layer || "";
   const info = {
@@ -244,8 +268,102 @@ function entityVisibleForViewMode(entity, mode) {
   return visibleForViewMode(layer, info, mode);
 }
 
+function entityVisibleForFloorContext(entity, floorContext) {
+  const layer = entity?.layer_name || entity?.layer || "";
+  const info = {
+    layer,
+    tag: entity?.semantic_entity || entity?.processingRole || entity?.mapping_status || "",
+    hasSemantic: !!entity?.semantic_entity,
+    hasVerified: ["expert_verified", "manual_mapped"].includes(entity?.mapping_status),
+    hasAutoMapped: entity?.mapping_status === "auto_mapped",
+    hasReviewCandidate: entity?.mapping_status === "needs_expert_review",
+  };
+
+  return visibleForFloorContext(layer, info, floorContext);
+}
+
+function floorRegexForContext(floorContext) {
+  switch (floorContext) {
+    case "basement":
+      return /\b(basement|bsm|basm|b\/m)\b/i;
+    case "first_floor":
+      return /\b(first\s*floor|first floor plan|\bff\b|\b1st\b)\b/i;
+    case "second_floor":
+      return /\b(second\s*floor|second floor plan|\bsf\b|\b2nd\b)\b/i;
+    case "roof":
+      return /\b(roof|terrace|mumty)\b/i;
+    case "ground_floor":
+    default:
+      return /\b(ground\s*floor|ground floor plan|\bgf\b|\bg\.?\s*f\.?)\b/i;
+  }
+}
+
+function floorLabelFromContext(floorContext) {
+  const regex = floorRegexForContext(floorContext);
+  return regex;
+}
+
 function getTagOption(tagValue, options = DEFAULT_TAG_OPTIONS) {
   return options.find((option) => option.value === tagValue) || options[0];
+}
+
+function humanizeTagValue(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function floorTagPrefix(floorContext) {
+  switch (floorContext) {
+    case "basement":
+      return "basement";
+    case "first_floor":
+      return "first";
+    case "second_floor":
+      return "second";
+    case "roof":
+      return "roof";
+    case "ground_floor":
+    default:
+      return "ground";
+  }
+}
+
+function resolveTagLabel(tagValue, options = DEFAULT_TAG_OPTIONS, suggestions = []) {
+  if (!tagValue) return "(unassigned)";
+  const option = options.find((item) => item.value === tagValue);
+  if (option?.label) return option.label;
+  const suggestion = suggestions.find((item) => item.tag === tagValue);
+  if (suggestion?.label) return suggestion.label;
+  return humanizeTagValue(tagValue);
+}
+
+function inferLayerTag(layerName, options = []) {
+  const layer = normalizeLayerLabel(layerName);
+  if (!layer) return "";
+
+  const matchers = [
+    { tokens: ["door", "doors", "dr"], label: "Doors" },
+    { tokens: ["window", "windows", "wn"], label: "Windows" },
+    { tokens: ["stair", "stairs", "st"], label: "Stairs" },
+    { tokens: ["porch", "car porch", "pr"], label: "Porch" },
+    { tokens: ["terrace", "balcony", "tr", "bl"], label: "Terrace / Balcony" },
+    { tokens: ["setback", "building line", "fbl", "sb"], label: "Setback" },
+    { tokens: ["plot", "boundary", "site pl", "a wall"], label: "Plot Boundary" },
+    { tokens: ["external wall", "external walls", "we"], label: "Building Footprint" },
+    { tokens: ["internal wall", "internal walls", "wi"], label: "Internal Walls" },
+    { tokens: ["road", "frontage"], label: "Road / Frontage" },
+    { tokens: ["parking", "car"], label: "Parking" },
+    { tokens: ["green", "lawn", "landscape", "ls"], label: "Green Area" },
+    { tokens: ["dimension", "dimensions", "dim", "ref dims"], label: "Dimensions" },
+    { tokens: ["text", "txt", "note", "notes"], label: "Text / Notes" },
+  ];
+
+  const hit = matchers.find((matcher) => matcher.tokens.some((token) => layer.includes(token)));
+  if (!hit) return "";
+  return options.find((option) => option.groupLabel === hit.label)?.value || "";
 }
 
 function buildSelectionKeywords(selectedLayer, selectedTag, options = DEFAULT_TAG_OPTIONS) {
@@ -260,6 +378,172 @@ function buildSelectionKeywords(selectedLayer, selectedTag, options = DEFAULT_TA
       .filter(Boolean)
       .flatMap((text) => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean))
   )];
+}
+
+function buildSelectionKeywordsFromLayers(layerNames = [], layerMeta = {}, options = DEFAULT_TAG_OPTIONS) {
+  const keywords = new Set();
+  for (const layer of Array.isArray(layerNames) ? layerNames : []) {
+    const tag = layerMeta?.[layer]?.tag || "";
+    const option = getTagOption(tag, options);
+    for (const token of buildSelectionKeywords(layer, tag, options)) {
+      keywords.add(token);
+    }
+    for (const token of [tag, option.label || "", ...(option.aliases || [])]) {
+      String(token || "")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter(Boolean)
+        .forEach((tokenPart) => keywords.add(tokenPart));
+    }
+  }
+  return Array.from(keywords);
+}
+
+const FLOOR_SEQUENCE = ["basement", "ground_floor", "first_floor", "second_floor", "roof"];
+
+function detectFloorToken(value) {
+  const text = normalizeLayerLabel(value);
+  if (!text) return "";
+  if (/(basement|bsm|b\/m|\bbm\b)/.test(text)) return "basement";
+  if (/(ground floor|groundfloor|\bgf\b|^\bg\b|\bground\b)/.test(text)) return "ground_floor";
+  if (/(first floor|firstfloor|\bff\b|\b1st\b|\bone\b|\bfirst\b)/.test(text)) return "first_floor";
+  if (/(second floor|secondfloor|\bsf\b|\b2nd\b|\btwo\b|\bsecond\b)/.test(text)) return "second_floor";
+  if (/(roof|\broof slab\b|\bterrace\b|\bmumty\b)/.test(text)) return "roof";
+  return "";
+}
+
+function floorAwareBaseKey(value) {
+  return normalizeLayerLabel(value)
+    .replace(/\b(?:basement|bsm|ground|gf|first|ff|second|sf|roof|terrace|mumty|floor|level|lvl)\b/g, " ")
+    .replace(/\b\d+(?:st|nd|rd|th)?\b/g, " ")
+    .replace(/\b(?:b\/m|b-m|g\/f|g-f|f\/f|s\/f)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreLayerSimilarity(referenceLayer, candidateLayer) {
+  const refBase = floorAwareBaseKey(referenceLayer);
+  const candBase = floorAwareBaseKey(candidateLayer);
+  if (!refBase || !candBase) return 0;
+  if (referenceLayer === candidateLayer) return 0;
+
+  const refTokens = new Set(refBase.split(" ").filter(Boolean));
+  const candTokens = new Set(candBase.split(" ").filter(Boolean));
+  if (!refTokens.size || !candTokens.size) return 0;
+
+  let intersection = 0;
+  for (const token of refTokens) {
+    if (candTokens.has(token)) intersection += 1;
+  }
+  const union = new Set([...refTokens, ...candTokens]).size || 1;
+  const jaccard = intersection / union;
+  const sameBase = refBase === candBase;
+  const refFloor = detectFloorToken(referenceLayer);
+  const candFloor = detectFloorToken(candidateLayer);
+  let score = jaccard;
+  if (sameBase) score += 1.5;
+  if (refFloor && candFloor && refFloor !== candFloor) score += 0.35;
+  if (refFloor && candFloor && refFloor === candFloor) score += 0.15;
+  if (refFloor && !candFloor) score += 0.05;
+  return score;
+}
+
+function resolvePickableHit(hit) {
+  if (!hit) return { object: null, layer: "", handle: "", expertMarkingId: "" };
+  let object = hit.object || null;
+  while (object) {
+    const userData = object.userData || {};
+    const layer = userData.layer || userData.layer_name || object.name || "";
+    const handle = userData.handle || "";
+    const expertMarkingId = userData.expertMarkingId || "";
+    if (layer || handle || expertMarkingId) {
+      return { object, layer, handle, expertMarkingId };
+    }
+    object = object.parent || null;
+  }
+  return { object: hit.object || null, layer: "", handle: "", expertMarkingId: "" };
+}
+
+function normalizeCadPoint(point) {
+  if (Array.isArray(point) && point.length >= 2) {
+    const x = Number(point[0]);
+    const y = Number(point[1]);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  }
+  if (point && typeof point === "object") {
+    const x = Number(point.x ?? point[0]);
+    const y = Number(point.y ?? point[1]);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  }
+  return null;
+}
+
+function entityPoints(entity) {
+  const raw = entity?.geometry_json?.points || entity?.points || [];
+  return Array.isArray(raw) ? raw.map(normalizeCadPoint).filter(Boolean) : [];
+}
+
+function entityBounds(entity) {
+  const bbox = entity?.bbox_json || entity?.bounding_box_json || entity?.bbox || {};
+  const minX = Number(bbox.min_x ?? bbox.minX);
+  const minY = Number(bbox.min_y ?? bbox.minY);
+  const maxX = Number(bbox.max_x ?? bbox.maxX);
+  const maxY = Number(bbox.max_y ?? bbox.maxY);
+  if ([minX, minY, maxX, maxY].every(Number.isFinite) && maxX >= minX && maxY >= minY) {
+    return { minX, minY, maxX, maxY };
+  }
+  const pts = entityPoints(entity);
+  if (!pts.length) return null;
+  return pts.reduce((bounds, p) => ({
+    minX: Math.min(bounds.minX, p.x),
+    minY: Math.min(bounds.minY, p.y),
+    maxX: Math.max(bounds.maxX, p.x),
+    maxY: Math.max(bounds.maxY, p.y),
+  }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+}
+
+function pointInBounds(point, bounds, tolerance = 0) {
+  return !!bounds &&
+    point.x >= bounds.minX - tolerance &&
+    point.x <= bounds.maxX + tolerance &&
+    point.y >= bounds.minY - tolerance &&
+    point.y <= bounds.maxY + tolerance;
+}
+
+function pointInPolygon(point, polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const pi = polygon[i];
+    const pj = polygon[j];
+    const intersect = ((pi.y > point.y) !== (pj.y > point.y)) &&
+      (point.x < ((pj.x - pi.x) * (point.y - pi.y)) / ((pj.y - pi.y) || 1e-9) + pi.x);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function distanceToSegment(point, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq <= 0) return Math.hypot(point.x - a.x, point.y - a.y);
+  const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq));
+  const px = a.x + t * dx;
+  const py = a.y + t * dy;
+  return Math.hypot(point.x - px, point.y - py);
+}
+
+function nearestPolylineDistance(point, points, closed = false) {
+  if (!Array.isArray(points) || points.length < 2) return Infinity;
+  let best = Infinity;
+  for (let i = 1; i < points.length; i += 1) {
+    best = Math.min(best, distanceToSegment(point, points[i - 1], points[i]));
+  }
+  if (closed && points.length > 2) {
+    best = Math.min(best, distanceToSegment(point, points[points.length - 1], points[0]));
+  }
+  return best;
 }
 
 function createBounds() {
@@ -583,7 +867,7 @@ function App() {
   const entitySummary = config.entitySummary || {};
   const rulesetOverview = config.rulesetOverview || {};
   const rulesMetadata = config.rulesMetadata || {};
-  const floorContext = config.floorContext || "";
+  const floorContext = config.floorContext || "ground_floor";
   const canvasRef = useRef(null);
   const rendererRef = useRef(null);
   const sceneRef = useRef(null);
@@ -623,6 +907,8 @@ function App() {
   const [hoverText, setHoverText] = useState("");
   const [summaryText, setSummaryText] = useState("");
   const [selectedLayer, setSelectedLayer] = useState("");
+  const [selectedLayers, setSelectedLayers] = useState([]);
+  const [quickMarkTag, setQuickMarkTag] = useState("");
   const [textEntities, setTextEntities] = useState([]);
   const [textFilter, setTextFilter] = useState("");
   const [measureMode, setMeasureMode] = useState(false);
@@ -681,12 +967,36 @@ function App() {
   const [, startUiTransition] = useTransition();
   const [topbarHeight, setTopbarHeight] = useState(72);
   const entityObjectsRef = useRef({});
+  const cadEntitiesRef = useRef([]);
+  const entityRowRefs = useRef({});
+  const layerRowRefs = useRef({});
+  const shiftPanRef = useRef(null);
   const centerTopbarRef = useRef(null);
   const autoMapBootstrappedRef = useRef(false);
+  const hoveredEntityHandleRef = useRef("");
+  const [hoveredEntityHandle, setHoveredEntityHandle] = useState("");
+  const [pickCandidates, setPickCandidates] = useState(null);
 
   useEffect(() => {
     layerMetaRef.current = layerMeta;
   }, [layerMeta]);
+
+  useEffect(() => {
+    cadEntitiesRef.current = cadEntities;
+  }, [cadEntities]);
+
+  useEffect(() => {
+    hoveredEntityHandleRef.current = hoveredEntityHandle;
+  }, [hoveredEntityHandle]);
+
+  useEffect(() => {
+    const firstHandle = selectedEntityHandles[0];
+    if (!firstHandle) return;
+    const node = entityRowRefs.current[firstHandle];
+    if (node?.scrollIntoView) {
+      node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedEntityHandles]);
 
   useEffect(() => {
     measureModeRef.current = measureMode;
@@ -703,6 +1013,73 @@ function App() {
   useEffect(() => {
     activeLabelKeyRef.current = activeLabelKey;
   }, [activeLabelKey]);
+
+  useEffect(() => {
+    if (!selectedLayer) return;
+    const node = layerRowRefs.current[selectedLayer];
+    if (node?.scrollIntoView) {
+      node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedLayer]);
+
+  const selectedLayerSet = useMemo(() => new Set(selectedLayers), [selectedLayers]);
+  const savedFloorTemplates = useMemo(() => {
+    const raw = config.trainingLabel?.floor_templates;
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  }, [config.trainingLabel]);
+  const floorWizard = useMemo(() => {
+    const activeLayers = (selectedLayers.length ? selectedLayers : [selectedLayer]).filter(Boolean);
+    const activeFloor = floorContext || detectFloorToken(activeLayers[0] || "") || "ground_floor";
+    const activeFloorIndex = Math.max(FLOOR_SEQUENCE.indexOf(activeFloor), 0);
+    const nextFloor = FLOOR_SEQUENCE[Math.min(activeFloorIndex + 1, FLOOR_SEQUENCE.length - 1)] || activeFloor;
+    const previousFloor = FLOOR_SEQUENCE[Math.max(activeFloorIndex - 1, 0)] || activeFloor;
+    const activeBases = new Map();
+    for (const layer of activeLayers) {
+      const base = floorAwareBaseKey(layer);
+      if (base) activeBases.set(base, layer);
+    }
+
+    const collected = new Map();
+    for (const candidate of layerOrder) {
+      if (!candidate || activeLayers.includes(candidate)) continue;
+      const candidateFloor = detectFloorToken(candidate);
+      const candidateBase = floorAwareBaseKey(candidate);
+      if (!candidateBase || !activeBases.has(candidateBase)) continue;
+      let bestScore = 0;
+      for (const sourceLayer of activeLayers) {
+        bestScore = Math.max(bestScore, scoreLayerSimilarity(sourceLayer, candidate));
+      }
+      if (bestScore < 0.6) continue;
+      const existing = collected.get(candidate) || { layer: candidate, score: 0, floor: candidateFloor };
+      collected.set(candidate, {
+        ...existing,
+        score: Math.max(existing.score || 0, bestScore),
+        floor: candidateFloor || existing.floor || "",
+      });
+    }
+
+    const matches = Array.from(collected.values()).sort((a, b) => b.score - a.score || a.layer.localeCompare(b.layer));
+    const crossFloorMatches = matches.filter((item) => item.floor && item.floor !== activeFloor);
+    const sameFloorMatches = matches.filter((item) => !item.floor || item.floor === activeFloor);
+
+    return {
+      activeFloor,
+      activeFloorIndex,
+      nextFloor,
+      previousFloor,
+      activeLayers,
+      crossFloorMatches,
+      sameFloorMatches,
+      hasGroup: selectedLayers.length > 1 || !!selectedLayer,
+      savedTemplate: savedFloorTemplates[activeFloor] || null,
+      previousSavedTemplate: savedFloorTemplates[previousFloor] || null,
+      nextSavedTemplate: savedFloorTemplates[nextFloor] || null,
+    };
+  }, [floorContext, layerOrder, selectedLayer, selectedLayers, savedFloorTemplates]);
+  const hasFloorSpecificLayers = useMemo(
+    () => layerOrder.some((layer) => !!detectFloorToken(layer)),
+    [layerOrder]
+  );
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -966,6 +1343,140 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     await loadLayerSuggestions();
   }
 
+  function zoomAwareTolerance() {
+    const canvas = canvasRef.current;
+    const camera = cameraRef.current;
+    if (!canvas || !camera) return 10;
+    const rect = canvas.getBoundingClientRect();
+    const viewWidth = Math.abs((camera.right - camera.left) / (camera.zoom || 1));
+    const unitsPerPixel = rect.width > 0 ? viewWidth / rect.width : 1;
+    return Math.max(4, unitsPerPixel * 12);
+  }
+
+  function candidateFromHandle(handle, source = "raycast", score = 0) {
+    if (!handle) return null;
+    const entity = cadEntitiesRef.current.find((item) => item.handle === handle);
+    const object = entityObjectsRef.current[handle];
+    const layer = entity?.layer_name || object?.userData?.layer || object?.userData?.layer_name || "";
+    return {
+      handle,
+      layer,
+      entityType: entity?.entity_type || object?.userData?.entityType || "CAD",
+      area: Number(entity?.measurement_json?.measured_area ?? entity?.area ?? object?.userData?.area ?? 0),
+      length: Number(entity?.measurement_json?.measured_length ?? entity?.perimeter ?? object?.userData?.perimeter ?? 0),
+      source,
+      score,
+    };
+  }
+
+  function geometryCandidatesAt(point) {
+    if (!point) return [];
+    const tolerance = zoomAwareTolerance();
+    const candidates = [];
+    for (const entity of cadEntitiesRef.current || []) {
+      const handle = entity?.handle;
+      if (!handle) continue;
+      const bounds = entityBounds(entity);
+      if (bounds && !pointInBounds(point, bounds, tolerance)) continue;
+      const points = entityPoints(entity);
+      const closed = !!(entity?.is_closed || entity?.geometry_json?.is_closed);
+      let score = Infinity;
+      let matched = false;
+      if (closed && points.length >= 3 && pointInPolygon(point, points)) {
+        matched = true;
+        score = 0;
+      }
+      const lineDistance = nearestPolylineDistance(point, points, closed);
+      if (lineDistance <= tolerance) {
+        matched = true;
+        score = Math.min(score, lineDistance);
+      }
+      if (!matched && bounds && pointInBounds(point, bounds, tolerance / 2)) {
+        matched = true;
+        score = tolerance / 2;
+      }
+      if (!matched) continue;
+      const candidate = candidateFromHandle(handle, "geometry", score);
+      if (candidate) candidates.push(candidate);
+    }
+    return candidates.sort((a, b) => a.score - b.score).slice(0, 8);
+  }
+
+  function mergePickCandidates(rayCandidates, geoCandidates) {
+    const byHandle = new Map();
+    for (const candidate of [...rayCandidates, ...geoCandidates]) {
+      if (!candidate?.handle) continue;
+      const prev = byHandle.get(candidate.handle);
+      if (!prev || candidate.score < prev.score || prev.source !== "raycast") {
+        byHandle.set(candidate.handle, { ...prev, ...candidate });
+      }
+    }
+    return Array.from(byHandle.values()).sort((a, b) => a.score - b.score);
+  }
+
+  function selectEntityCandidate(candidate, options = {}) {
+    if (!candidate?.handle) return;
+    const additive = !!options.additive;
+    setSelectedEntityHandle(candidate.handle);
+    setSelectedEntityHandles((prev) => {
+      if (!additive) return [candidate.handle];
+      if (prev.includes(candidate.handle)) {
+        return prev;
+      }
+      return [...prev, candidate.handle];
+    });
+    if (candidate.layer) {
+      selectLayer(candidate.layer, { additive });
+    }
+    setPickCandidates(null);
+    setStatusMessage(`Selected ${candidate.handle}${candidate.layer ? ` on ${candidate.layer}` : ""}.`);
+  }
+
+  function unselectEntity(handle) {
+    if (!handle) return;
+    setSelectedEntityHandles((prev) => prev.filter((item) => item !== handle));
+    setSelectedEntityHandle((prev) => (prev === handle ? "" : prev));
+  }
+
+  function zoomToEntity(entity) {
+    const bounds = entityBounds(entity);
+    if (!bounds) return;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    const width = Math.max(bounds.maxX - bounds.minX, 1);
+    const height = Math.max(bounds.maxY - bounds.minY, 1);
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    const aspect = lastSizeRef.current.h > 0 ? lastSizeRef.current.w / lastSizeRef.current.h : 1;
+    const viewW = Math.max(width * 1.6, height * aspect * 1.6);
+    const viewH = Math.max(height * 1.6, width / aspect * 1.6);
+    camera.left = -viewW / 2;
+    camera.right = viewW / 2;
+    camera.top = viewH / 2;
+    camera.bottom = -viewH / 2;
+    camera.position.set(centerX, centerY, Math.max(1000, width, height));
+    camera.updateProjectionMatrix();
+    controls.target.set(centerX, centerY, 0);
+    controls.update();
+    render();
+  }
+
+  function resetView() {
+    applyViewMode(floorContext ? "floor" : "approval");
+    requestAnimationFrame(() => fitView());
+  }
+
+  function toggleFullscreenViewer() {
+    const node = canvasRef.current?.parentElement;
+    if (!node) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+    } else {
+      node.requestFullscreen?.();
+    }
+  }
+
   function initThree() {
     const canvas = canvasRef.current;
     if (!canvas) return () => {};
@@ -985,6 +1496,8 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableRotate = false;
+    controls.enablePan = true;
+    controls.screenSpacePanning = true;
     controls.zoomSpeed = 1.0;
     controls.addEventListener("change", render);
     controlsRef.current = controls;
@@ -1014,9 +1527,58 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       });
     };
 
+    const beginShiftPan = (event) => {
+      if (!event.shiftKey || event.button !== 0 || drawingModeRef.current !== "select" || measureModeRef.current) {
+        return false;
+      }
+      shiftPanRef.current = {
+        startX: event.clientX,
+        startY: event.clientY,
+        targetX: controls.target.x,
+        targetY: controls.target.y,
+        moved: false,
+      };
+      canvas.style.cursor = "grabbing";
+      try {
+        canvas.setPointerCapture?.(event.pointerId);
+      } catch {
+        // ignore pointer capture failures
+      }
+      return true;
+    };
+
+    const updateShiftPan = (event) => {
+      const pan = shiftPanRef.current;
+      if (!pan) return false;
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return false;
+      const cameraWidth = (camera.right - camera.left) / camera.zoom;
+      const cameraHeight = (camera.top - camera.bottom) / camera.zoom;
+      const dx = event.clientX - pan.startX;
+      const dy = event.clientY - pan.startY;
+      pan.moved = pan.moved || Math.abs(dx) > 2 || Math.abs(dy) > 2;
+      controls.target.set(
+        pan.targetX - (dx / rect.width) * cameraWidth,
+        pan.targetY + (dy / rect.height) * cameraHeight,
+        controls.target.z,
+      );
+      controls.update();
+      render();
+      return true;
+    };
+
+    const endShiftPan = () => {
+      if (!shiftPanRef.current) return;
+      shiftPanRef.current = null;
+      canvas.style.cursor = "";
+    };
+
     resizeFnRef.current = applyResize;
 
     const onPointerDown = (event) => {
+      if (beginShiftPan(event)) {
+        return;
+      }
       const worldPoint = getWorldPoint(event);
       const mode = drawingModeRef.current;
       const activeLabel = activeLabelKeyRef.current;
@@ -1086,48 +1648,87 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       const pickables = pickableObjectsRef.current.length
         ? pickableObjectsRef.current
         : Object.values(entityObjectsRef.current || {});
-      const hits = raycaster.intersectObjects(pickables, false);
+      const hits = raycaster.intersectObjects(pickables, true);
       if (hits.length) {
-        let obj = hits[0].object;
-        const pickedMarkingId = obj.userData?.expertMarkingId || obj.parent?.userData?.expertMarkingId;
-        if (pickedMarkingId) {
-          setSelectedMarkingId(pickedMarkingId);
-          const marking = expertMarkings.find((m) => Number(m.id) === Number(pickedMarkingId));
+        const resolvedHits = hits.map((hit) => ({ hit, meta: resolvePickableHit(hit) }));
+        const rayCandidates = resolvedHits
+          .filter(({ meta }) => meta.handle)
+          .map(({ meta }, idx) => candidateFromHandle(meta.handle, "raycast", idx));
+        const geometryCandidates = geometryCandidatesAt(worldPoint);
+        const cadCandidates = mergePickCandidates(rayCandidates, geometryCandidates);
+        if (cadCandidates.length > 1 && !event.ctrlKey && !event.metaKey) {
+          setPickCandidates({
+            x: event.clientX - left,
+            y: event.clientY - top,
+            candidates: cadCandidates.slice(0, 6),
+          });
+          return;
+        }
+        if (cadCandidates.length) {
+          selectEntityCandidate(cadCandidates[0], { additive: event.ctrlKey || event.metaKey });
+          return;
+        }
+        const markingHit = resolvedHits.find(({ meta }) => meta.expertMarkingId);
+        const selectedHit = markingHit || resolvedHits[0];
+        const meta = selectedHit?.meta || { layer: "", handle: "", expertMarkingId: "" };
+        if (meta.expertMarkingId && !meta.handle && !meta.layer) {
+          setSelectedMarkingId(meta.expertMarkingId);
+          const marking = expertMarkings.find((m) => Number(m.id) === Number(meta.expertMarkingId));
           if (marking?.label_key) {
             selectActiveLabel(marking.label_key);
           }
-          setStatusMessage(`Selected marking #${pickedMarkingId}`);
+          setStatusMessage(`Selected marking #${meta.expertMarkingId}`);
           return;
         }
-        const pickedHandle = obj.userData?.handle || "";
-        let layer = obj.userData.layer;
-        while (!layer && obj.parent) {
-          obj = obj.parent;
-          layer = obj.userData.layer || obj.name;
-        }
+        const pickedHandle = meta.handle || "";
+        const layer = meta.layer || "";
         if (pickedHandle) {
-          setSelectedEntityHandle(pickedHandle);
-          setSelectedEntityHandles((prev) => {
-            if (event.shiftKey) {
-              if (prev.includes(pickedHandle)) return prev;
-              return [...prev, pickedHandle];
-            }
-            return [pickedHandle];
-          });
+          selectEntityCandidate(candidateFromHandle(pickedHandle, "raycast", 0), { additive: event.ctrlKey || event.metaKey });
         }
         if (layer) {
           selectLayer(layer);
         }
+      } else {
+        const geometryCandidates = geometryCandidatesAt(worldPoint);
+        if (geometryCandidates.length > 1 && !event.ctrlKey && !event.metaKey) {
+          setPickCandidates({
+            x: event.clientX - left,
+            y: event.clientY - top,
+            candidates: geometryCandidates.slice(0, 6),
+          });
+          return;
+        }
+        if (geometryCandidates.length) {
+          selectEntityCandidate(geometryCandidates[0], { additive: event.ctrlKey || event.metaKey });
+          return;
+        }
+        setPickCandidates(null);
       }
     };
 
     const onPointerMove = (event) => {
+      if (updateShiftPan(event)) {
+        return;
+      }
       const mode = drawingModeRef.current;
-      if (mode === "select") return;
+      if (mode === "select") {
+        const world = getWorldPoint(event);
+        const hoverCandidate = world ? geometryCandidatesAt(world)[0] : null;
+        const nextHandle = hoverCandidate?.handle || "";
+        if (nextHandle !== hoveredEntityHandleRef.current) {
+          setHoveredEntityHandle(nextHandle);
+        }
+        canvas.style.cursor = nextHandle ? "pointer" : "";
+        return;
+      }
       if (!["polygon", "polyline", "rectangle"].includes(mode)) return;
       const worldPoint = getWorldPoint(event);
       if (!worldPoint) return;
       updateDrawingCursor(worldPoint);
+    };
+
+    const onPointerUp = () => {
+      endShiftPan();
     };
 
     const onDblClick = () => {
@@ -1140,6 +1741,8 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     window.addEventListener("resize", scheduleResize);
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
     canvas.addEventListener("dblclick", onDblClick);
     if (canvas.parentElement && typeof ResizeObserver !== "undefined") {
       const observer = new ResizeObserver(() => scheduleResize());
@@ -1152,6 +1755,8 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       window.removeEventListener("resize", scheduleResize);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
       canvas.removeEventListener("dblclick", onDblClick);
       if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
       resizeRafRef.current = 0;
@@ -1512,23 +2117,85 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     );
   }
 
+  function computeFloorFocusBbox(floorContext) {
+    const textMatches = (textEntitiesRef.current || []).filter((item) => {
+      const text = normalizeDxfText(item?.text || "");
+      return text && floorRegexForContext(floorContext).test(text);
+    });
+    if (!textMatches.length) return null;
+
+    const textPoints = textMatches
+      .filter((item) => Number.isFinite(item.x) && Number.isFinite(item.y))
+      .map((item) => ({ x: item.x, y: item.y }));
+    if (!textPoints.length) return null;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    const allBounds = [];
+    for (const [layer, bounds] of Object.entries(layerBoundsRef.current || {})) {
+      if (!hasBounds(bounds)) continue;
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const centerY = (bounds.minY + bounds.maxY) / 2;
+      let bestDistance = Infinity;
+      for (const point of textPoints) {
+        const dx = centerX - point.x;
+        const dy = centerY - point.y;
+        const distance = Math.sqrt((dx * dx) + (dy * dy));
+        if (distance < bestDistance) bestDistance = distance;
+      }
+      allBounds.push({ layer, bounds, distance: bestDistance });
+    }
+
+    if (!allBounds.length) return null;
+    allBounds.sort((a, b) => a.distance - b.distance);
+
+    const baseDistance = Number.isFinite(allBounds[0].distance) ? allBounds[0].distance : 0;
+    const radius = Math.max(baseDistance * 1.75, 5000);
+
+    for (const item of allBounds) {
+      if (!Number.isFinite(item.distance) || item.distance > radius) continue;
+      minX = Math.min(minX, item.bounds.minX);
+      minY = Math.min(minY, item.bounds.minY);
+      maxX = Math.max(maxX, item.bounds.maxX);
+      maxY = Math.max(maxY, item.bounds.maxY);
+    }
+
+    if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
+    if (minX >= maxX || minY >= maxY) return null;
+
+    return new THREE.Box3(
+      new THREE.Vector3(minX, minY, 0),
+      new THREE.Vector3(maxX, maxY, 0)
+    );
+  }
+
   function fitView() {
     if (!visibleEntityCount() && forceMappedEntitiesVisible() > 0) {
       setStatusMessage("Showing mapped approval geometry. Raw CAD layers are hidden.");
     }
     const fullBbox = computeBbox();
     if (!fullBbox || !Number.isFinite(fullBbox.min.x) || !Number.isFinite(fullBbox.max.x)) return;
+    const floorFocusBbox = floorContext ? computeFloorFocusBbox(floorContext) : null;
     const trimmedBbox = computeTrimmedBbox();
     const denseBbox = computeDenseBbox();
     const dominantBbox = computeDominantLayerBbox();
-    let bbox = fullBbox;
-    let source = "full";
+    let bbox = floorFocusBbox || fullBbox;
+    let source = floorFocusBbox ? "floor-focus" : "full";
     const fullSize = new THREE.Vector3();
     fullBbox.getSize(fullSize);
     const fullSpan = Math.max(fullSize.x, fullSize.y);
+    let floorSpan = null;
     let dominantSpan = null;
     let trimmedSpan = null;
     let denseSpan = null;
+    if (floorFocusBbox) {
+      const floorSize = new THREE.Vector3();
+      floorFocusBbox.getSize(floorSize);
+      floorSpan = Math.max(floorSize.x, floorSize.y);
+    }
     if (dominantBbox) {
       const dominantSize = new THREE.Vector3();
       dominantBbox.getSize(dominantSize);
@@ -1556,8 +2223,11 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     } else if (Number.isFinite(dominantSpan) && dominantSpan > 0 && (fullSpan / dominantSpan) > OUTLIER_RATIO_THRESHOLD) {
       bbox = dominantBbox;
       source = "dominant";
+    } else if (floorFocusBbox && Number.isFinite(floorSpan)) {
+      bbox = floorFocusBbox;
+      source = "floor-focus";
     }
-    fitInfoRef.current = { source, fullSpan, dominantSpan, trimmedSpan, denseSpan };
+    fitInfoRef.current = { source, fullSpan, dominantSpan, trimmedSpan, denseSpan, floorSpan };
     if (lastSizeRef.current.w <= 0 || lastSizeRef.current.h <= 0) {
       resizeFnRef.current?.();
     }
@@ -2393,7 +3063,9 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
         const next = { ...prev };
         for (const [layer, info] of Object.entries(layerSeen)) {
           const merged = { ...(next[layer] || {}), ...info, tag: next[layer]?.tag || info.tag || "", count: info.count };
-          merged.visible = visibleForViewMode(layer, merged, "approval");
+          merged.visible = floorContext
+            ? visibleForFloorContext(layer, merged, floorContext)
+            : visibleForViewMode(layer, merged, "approval");
           next[layer] = merged;
           if (layerGroupsRef.current[layer]) {
             layerGroupsRef.current[layer].visible = true;
@@ -2401,7 +3073,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
         }
         return next;
       });
-      setViewMode("approval");
+      setViewMode(floorContext ? "floor" : "approval");
       if (!visibleEntityCount()) {
         forceMappedEntitiesVisible();
       }
@@ -2417,19 +3089,13 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
 
   function refreshLayerHighlight(layerName = selectedLayer, relatedLayers = []) {
     const relatedSet = new Set(relatedLayers || []);
-    const prev = highlightStateRef.current || { selected: "", related: new Set() };
-    const candidateLayers = new Set([
-      ...(prev.selected ? [prev.selected] : []),
-      ...Array.from(prev.related || []),
-      ...(layerName ? [layerName] : []),
-      ...Array.from(relatedSet),
-    ]);
+    const allLayers = Object.keys(layerGroupsRef.current || {});
 
-    for (const layer of candidateLayers) {
+    for (const layer of allLayers) {
       const group = layerGroupsRef.current[layer];
       const lineObject = group?.userData?.lineObject;
       if (!lineObject || !lineObject.material) continue;
-      const isSelected = layer && layerName && layer === layerName;
+      const isSelected = selectedLayerSet.has(layer) || (layerName && layer === layerName);
       const isRuleRelated = relatedSet.has(layer);
       const color = isSelected ? 0x0b3d91 : isRuleRelated ? 0x2c5fb8 : 0x111111;
       lineObject.material.color.set(color);
@@ -2441,12 +3107,86 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     render();
   }
 
-  function selectLayer(layer) {
+  function selectLayer(layer, options = {}) {
     if (!layer) return;
+    const additive = !!options.additive;
     startUiTransition(() => {
       setSelectedLayer(layer);
+      setSelectedLayers((prev) => {
+        if (!additive) return [layer];
+        if (prev.includes(layer)) {
+          return prev.filter((item) => item !== layer);
+        }
+        return [...prev, layer];
+      });
     });
     setHoverText(`Layer: ${layer}`);
+  }
+
+  function addLayersToSelection(layerNames = []) {
+    const nextLayers = Array.isArray(layerNames) ? layerNames.filter(Boolean) : [];
+    if (!nextLayers.length) return;
+    startUiTransition(() => {
+      setSelectedLayers((prev) => Array.from(new Set([...prev, ...nextLayers])));
+      if (!selectedLayer && nextLayers[0]) {
+        setSelectedLayer(nextLayers[0]);
+      }
+    });
+    setHoverText(`Added ${nextLayers.join(", ")} to the selected group.`);
+  }
+
+  function captureCurrentFloorTemplate() {
+    const activeLayers = (selectedLayers.length ? selectedLayers : [selectedLayer]).filter(Boolean);
+    const messageTarget = window.opener || window.parent;
+    const payload = {
+      type: "cad-floor-template-suggestion",
+      payload: {
+        floorContext: floorWizard.activeFloor,
+        floorLabel: humanFloorContext(floorWizard.activeFloor),
+        source: "viewer",
+        template: {
+          layer_names: activeLayers,
+          entity_handles: selectedEntityHandles,
+          selected_layer: selectedLayer || activeLayers[0] || "",
+          active_label_key: activeLabelKey,
+        },
+      },
+    };
+    messageTarget?.postMessage(payload, window.location.origin);
+    setStatusMessage(`Captured ${humanFloorContext(floorWizard.activeFloor)} template for the parent form.`);
+  }
+
+  function applySavedFloorTemplate(template, sourceFloor) {
+    if (!template || typeof template !== "object") return;
+    const layerNames = Array.isArray(template.layer_names) ? template.layer_names.filter(Boolean) : [];
+    const handles = Array.isArray(template.entity_handles) ? template.entity_handles.filter(Boolean) : [];
+    if (layerNames.length) {
+      addLayersToSelection(layerNames);
+    }
+    if (handles.length) {
+      startUiTransition(() => {
+        setSelectedEntityHandles((prev) => Array.from(new Set([...prev, ...handles])));
+      });
+    }
+    setStatusMessage(`Applied saved ${humanFloorContext(sourceFloor)} template to the current selection.`);
+  }
+
+  function clearLayerSelection() {
+    startUiTransition(() => {
+      setSelectedLayer("");
+      setSelectedLayers([]);
+    });
+    setHoverText("");
+  }
+
+  function buildFloorContextUrl(targetFloor) {
+    const url = new URL(window.location.href);
+    if (targetFloor) {
+      url.searchParams.set("floor_context", targetFloor);
+    } else {
+      url.searchParams.delete("floor_context");
+    }
+    return url.toString();
   }
 
   function selectActiveLabel(labelKey) {
@@ -2469,6 +3209,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     setLayerMeta({});
     setLayerOrder([]);
     setSelectedLayer("");
+    setSelectedLayers([]);
     setHoverText("");
 
     let text = "";
@@ -2714,14 +3455,18 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     setLayerMeta((prev) => {
       const next = { ...prev };
       for (const layer of layerOrder) {
-        const visible = visibleForViewMode(layer, next[layer], mode);
+        const visible = mode === "floor"
+          ? visibleForFloorContext(layer, next[layer], floorContext)
+          : visibleForViewMode(layer, next[layer], mode);
         next[layer] = { ...(next[layer] || {}), visible };
         if (layerGroupsRef.current[layer]) layerGroupsRef.current[layer].visible = true;
       }
       return next;
     });
     for (const obj of Object.values(entityObjectsRef.current || {})) {
-      obj.visible = entityVisibleForViewMode(obj.userData || {}, mode);
+      obj.visible = mode === "floor"
+        ? entityVisibleForFloorContext(obj.userData || {}, floorContext)
+        : entityVisibleForViewMode(obj.userData || {}, mode);
     }
     requestAnimationFrame(() => fitView());
   }
@@ -2853,15 +3598,14 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     setScaleLabel(autoScaleFromPlotBoundary.label);
   }, [autoScaleFromPlotBoundary, scaleTouched]);
   const filteredText = useMemo(() => {
-    const selectedTag = selectedLayer ? (layerMeta[selectedLayer]?.tag || "") : "";
-    const selectionKeywords = buildSelectionKeywords(selectedLayer, selectedTag, tagOptions);
+    const selectionKeywords = buildSelectionKeywordsFromLayers(selectedLayers.length ? selectedLayers : [selectedLayer].filter(Boolean), layerMeta, tagOptions);
 
     let scopedText = textEntities;
     if (selectionKeywords.length) {
       scopedText = textEntities.filter((item) => {
         const itemTag = layerMeta[item.layer]?.tag || "";
         const haystack = `${item.layer} ${itemTag} ${item.text}`.toLowerCase();
-        return item.layer === selectedLayer || selectionKeywords.some((keyword) => haystack.includes(keyword));
+        return selectedLayerSet.has(item.layer) || selectionKeywords.some((keyword) => haystack.includes(keyword));
       });
     }
 
@@ -2870,7 +3614,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     return scopedText
       .filter((item) => item.text.toLowerCase().includes(needle) || item.layer.toLowerCase().includes(needle))
       .slice(0, MAX_TEXT_ITEMS);
-  }, [textEntities, textFilter, selectedLayer, layerMeta, tagOptions]);
+  }, [textEntities, textFilter, selectedLayer, selectedLayerSet, selectedLayers, layerMeta, tagOptions]);
   const scaledDistance = Number.isFinite(measureDistance)
     ? measureDistance * (Number.isFinite(scaleMultiplier) ? scaleMultiplier : 1)
     : null;
@@ -2955,15 +3699,16 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     entity_summary: entitySummary,
   };
   const selectedLayerRules = useMemo(() => {
-    if (!selectedLayer) return [];
-    const keywords = buildSelectionKeywords(selectedLayer, layerMeta[selectedLayer]?.tag || "", tagOptions);
+    const activeLayers = selectedLayers.length ? selectedLayers : [selectedLayer].filter(Boolean);
+    if (!activeLayers.length) return [];
+    const keywords = buildSelectionKeywordsFromLayers(activeLayers, layerMeta, tagOptions);
 
     if (!keywords.length) return [];
     return rules.filter((rule) => {
       const content = `${rule.title || ""} ${rule.description || ""}`.toLowerCase();
       return keywords.some((keyword) => content.includes(keyword));
     }).slice(0, 8);
-  }, [selectedLayer, layerMeta, rules, tagOptions]);
+  }, [selectedLayer, selectedLayers, layerMeta, rules, tagOptions]);
   const selectedRuleRelatedLayers = useMemo(() => {
     const rule = rules.find((item) => item.id === selectedRuleId);
     if (!rule) return [];
@@ -2976,18 +3721,18 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       .map(([name]) => name);
   }, [layerMeta, rules, selectedRuleId]);
   const selectedLayerTextMatches = useMemo(() => {
-    if (!selectedLayer) return [];
-    const selectedTag = layerMeta[selectedLayer]?.tag || "";
-    const keywords = buildSelectionKeywords(selectedLayer, selectedTag, tagOptions);
+    const activeLayers = selectedLayers.length ? selectedLayers : [selectedLayer].filter(Boolean);
+    if (!activeLayers.length) return [];
+    const keywords = buildSelectionKeywordsFromLayers(activeLayers, layerMeta, tagOptions);
     if (!keywords.length) return [];
 
     return textEntities
       .filter((item) => {
         const haystack = `${item.layer} ${item.text}`.toLowerCase();
-        return item.layer === selectedLayer || keywords.some((keyword) => haystack.includes(keyword));
+        return selectedLayerSet.has(item.layer) || keywords.some((keyword) => haystack.includes(keyword));
       })
       .slice(0, 8);
-  }, [selectedLayer, layerMeta, textEntities, tagOptions]);
+  }, [selectedLayer, selectedLayers, selectedLayerSet, layerMeta, textEntities, tagOptions]);
   const cadTextMeasurements = useMemo(() => extractCadTextMeasurements(textEntities), [textEntities]);
   const activeLabelTextReferences = useMemo(() => {
     if (!activeLabelKey) return [];
@@ -3043,8 +3788,8 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
 
   const suggestedOfficialMappings = useMemo(() => {
     const base = FLOOR_OFFICIAL_SUGGESTIONS[floorContext] || FLOOR_OFFICIAL_SUGGESTIONS.ground_floor;
-    const selectedTag = selectedLayer ? (layerMeta[selectedLayer]?.tag || "") : "";
-    const keywords = buildSelectionKeywords(selectedLayer, selectedTag, tagOptions);
+    const activeLayers = selectedLayers.length ? selectedLayers : [selectedLayer].filter(Boolean);
+    const keywords = buildSelectionKeywordsFromLayers(activeLayers, layerMeta, tagOptions);
 
     return base
       .map((item) => {
@@ -3054,7 +3799,73 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       })
       .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label))
       .slice(0, 6);
-  }, [floorContext, layerMeta, selectedLayer, tagOptions]);
+  }, [floorContext, layerMeta, selectedLayer, selectedLayers, tagOptions]);
+  const quickMarkOptions = useMemo(() => {
+    const prefix = floorTagPrefix(floorContext);
+    const suggestions = FLOOR_OFFICIAL_SUGGESTIONS[floorContext] || FLOOR_OFFICIAL_SUGGESTIONS.ground_floor;
+    const suggestionByTag = new Map(suggestions.map((item) => [item.tag, item]));
+    const optionByValue = new Map(tagOptions.map((item) => [item.value, item]));
+    const items = [];
+    const seen = new Set();
+
+    const add = (value, label, groupLabel = label) => {
+      if (!value || seen.has(value)) return;
+      const option = optionByValue.get(value);
+      const suggestion = suggestionByTag.get(value);
+      items.push({
+        value,
+        label: label || option?.label || suggestion?.label || humanizeTagValue(value),
+        groupLabel,
+        aliases: option?.aliases || [],
+      });
+      seen.add(value);
+    };
+
+    const firstAvailable = (values) => {
+      const exact = values.find((value) => optionByValue.has(value) || suggestionByTag.has(value));
+      return exact || values[0] || "";
+    };
+
+    [
+      { label: "Doors", values: [`${prefix}_doors`, "door", "doors", "ground_doors"] },
+      { label: "Plot Boundary", values: ["plot_boundary", "boundary_wall", "plot_line"] },
+      { label: "Building Footprint", values: [`${prefix}_external_walls`, "ground_external_walls", "external_walls", "building_footprint"] },
+      { label: "Internal Walls", values: [`${prefix}_internal_walls`, "ground_internal_walls", "internal_walls"] },
+      { label: "Setback", values: ["setback", "setback_lines", "front_setback", "front_building_line", "side_building_line", "rear_building_line"] },
+      { label: "Road / Frontage", values: ["road_frontage_line", "road_frontage", "front_road", "road"] },
+      { label: "Windows", values: [`${prefix}_windows`, "ground_windows", "windows", "window"] },
+      { label: "Stairs", values: [`${prefix}_stairs`, "ground_stairs", "stairs", "stairs_ramp"] },
+      { label: "Porch", values: [`${prefix}_porch`, "ground_porch", "porch"] },
+      { label: "Parking", values: [`${prefix}_parking`, "parking", "car_parking"] },
+      { label: "Green Area", values: ["landscape", "green_area", "lawn", "open_space"] },
+      { label: "Dimensions", values: ["dimension", "dimensions", "measurement_text"] },
+      { label: "Text / Notes", values: [`${prefix}_text`, "text", "text_general"] },
+      { label: "Other", values: ["other"] },
+    ].forEach((group) => add(firstAvailable(group.values), group.label, group.label));
+
+    suggestions.forEach((item) => add(item.tag, item.label, item.label));
+    tagOptions
+      .filter((option) => option.value)
+      .forEach((option) => add(option.value, option.label, option.label));
+
+    return [{ value: "", label: "Choose layer type...", groupLabel: "" }, ...items];
+  }, [floorContext, tagOptions]);
+  const quickMarkSelectedLayers = useMemo(
+    () => (selectedLayers.length ? selectedLayers : [selectedLayer]).filter(Boolean),
+    [selectedLayer, selectedLayers]
+  );
+  const quickMarkAssignedLabel = layerMeta[selectedLayer]?.tag
+    ? resolveTagLabel(selectedLayer ? layerMeta[selectedLayer]?.tag : "", tagOptions, suggestedOfficialMappings)
+    : "";
+
+  useEffect(() => {
+    if (!selectedLayer) {
+      setQuickMarkTag("");
+      return;
+    }
+    const existingTag = layerMeta[selectedLayer]?.tag || "";
+    setQuickMarkTag(existingTag || inferLayerTag(selectedLayer, quickMarkOptions));
+  }, [selectedLayer, layerMeta, quickMarkOptions]);
   const validationCounts = useMemo(() => {
     const rows = Array.isArray(validationReport?.rules) ? validationReport.rules : [];
     const out = { pass: 0, fail: 0, warn: 0, needs_review: 0, not_applicable: 0 };
@@ -3132,7 +3943,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
   }, [expertReport]);
   useEffect(() => {
     refreshLayerHighlight(selectedLayer, selectedRuleRelatedLayers);
-  }, [selectedLayer, selectedRuleRelatedLayers]);
+  }, [selectedLayer, selectedLayerSet, selectedRuleRelatedLayers]);
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
@@ -3174,9 +3985,14 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
   }, [expertMarkings, selectedMarkingId]);
   useEffect(() => {
     const mappedHandles = new Set();
+    const activeMappedHandles = new Set();
     for (const row of (mappingReport?.labels || [])) {
       for (const entity of (row.entities || [])) {
-        if (entity?.cad_handle) mappedHandles.add(entity.cad_handle);
+        if (!entity?.cad_handle) continue;
+        mappedHandles.add(entity.cad_handle);
+        if (row.label_key === activeLabelKey) {
+          activeMappedHandles.add(entity.cad_handle);
+        }
       }
     }
     for (const [handle, obj] of Object.entries(entityObjectsRef.current || {})) {
@@ -3185,18 +4001,24 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       if (selected) {
         obj.material.color.set(0x0b3d91);
         obj.material.opacity = 1;
+      } else if (activeMappedHandles.has(handle)) {
+        obj.material.color.set(0x0f6b5f);
+        obj.material.opacity = 1;
+      } else if (handle === hoveredEntityHandle) {
+        obj.material.color.set(0x44546a);
+        obj.material.opacity = 0.95;
       } else if (mappedHandles.has(handle)) {
         obj.material.color.set(0x1f6feb);
         obj.material.opacity = 0.9;
       } else {
-        obj.material.color.set(0x111111);
-        obj.material.opacity = 0.7;
+        obj.material.color.set(0xa8b0ba);
+        obj.material.opacity = 0.65;
       }
       obj.material.transparent = true;
       obj.material.needsUpdate = true;
     }
     render();
-  }, [mappingReport, selectedEntityHandles]);
+  }, [activeLabelKey, hoveredEntityHandle, mappingReport, selectedEntityHandles]);
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
@@ -3287,33 +4109,87 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       { step: "Model improves over time", status: "future" },
     ];
   }, [config.submissionId, config.hasDxf, config.mapDrawingId, validationReport, mapSummary, validationCounts]);
-  const suggestionEntries = useMemo(
-    () => Object.entries(layerSuggestions || {}),
-    [layerSuggestions]
-  );
-
   function sendLayerMappingSuggestion(officialTag) {
-    if (!selectedLayer || !officialTag) return;
+    const layerNames = (selectedLayers.length ? selectedLayers : [selectedLayer].filter(Boolean)).filter(Boolean);
+    if (!layerNames.length || !officialTag) return;
+    const primaryLayer = layerNames[0];
+    const messageTarget = window.opener || window.parent;
 
-    window.parent?.postMessage(
+    messageTarget?.postMessage(
       {
         type: "cad-layer-map-suggestion",
         payload: {
           floorContext,
           officialTag,
-          layerName: selectedLayer,
-          layerLabel: layerMeta[selectedLayer]?.tag || "",
+          layerName: primaryLayer,
+          layerNames,
+          layerLabel: layerMeta[primaryLayer]?.tag || "",
         },
       },
       window.location.origin
     );
 
-    setStatusMessage(`Sent ${selectedLayer} to the parent mapper as ${officialTag}.`);
+    setStatusMessage(`Sent ${layerNames.join(", ")} to the parent mapper as ${officialTag}.`);
+  }
+
+  function applyQuickLayerMark(tagValue = quickMarkTag) {
+    const tag = String(tagValue || "").trim();
+    if (!tag) {
+      setStatusMessage("Choose a layer type before applying the mapping.");
+      return;
+    }
+
+    const layerNames = quickMarkSelectedLayers.length ? quickMarkSelectedLayers : [selectedLayer].filter(Boolean);
+    if (!layerNames.length) return;
+
+    layerNames.forEach((layerName) => updateLayerMeta(layerName, { tag }));
+    setQuickMarkTag(tag);
+    const label = resolveTagLabel(tag, tagOptions, suggestedOfficialMappings);
+    setStatusMessage(`Marked ${layerNames.join(", ")} as ${label}. Click Save mapping to persist.`);
   }
 
   return (
     <div className="layout">
       <div className="sidebar" style={{ width: "25%", minWidth: 320 }}>
+        <div className="card" style={{ border: "1px solid #dfe7ef", borderRadius: 12, padding: 10, marginBottom: 10, background: "#f8fbff", position: "sticky", top: 8, zIndex: 2 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+            <div>
+              <div style={{ fontWeight: 700 }}>Floor marking wizard</div>
+              <div className="muted">Start at ground floor, capture the template, then move floor by floor.</div>
+            </div>
+            <span className="pill">{humanFloorContext(floorWizard.activeFloor)} context</span>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            {FLOOR_SEQUENCE.map((floor) => (
+              <a
+                key={floor}
+                className={`pill${floor === floorWizard.activeFloor ? " active" : ""}`}
+                href={buildFloorContextUrl(floor)}
+                style={{ textDecoration: "none" }}
+                title={`Open ${humanFloorContext(floor)} context`}
+              >
+                {humanFloorContext(floor)}
+              </a>
+            ))}
+          </div>
+          <div className="muted" style={{ marginBottom: 8 }}>
+            Current step {floorWizard.activeFloorIndex + 1} of {FLOOR_SEQUENCE.length}. Next floor: <b>{humanFloorContext(floorWizard.nextFloor)}</b>.
+          </div>
+          {!hasFloorSpecificLayers ? (
+            <div style={{ border: "1px solid #f2c94c", background: "#fff8df", borderRadius: 8, padding: 8, marginBottom: 8, fontSize: 12 }}>
+              Floor-specific CAD layers were not detected. Manually select entities; confidence is reduced and based on geometry/text references.
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" onClick={() => captureCurrentFloorTemplate()}>
+              Capture template
+            </button>
+            <a href={buildFloorContextUrl(floorWizard.nextFloor)} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "7px 10px", borderRadius: 8, border: "1px solid #d0d7de", textDecoration: "none", color: "#111" }}>
+              Go to next floor
+            </a>
+          </div>
+        </div>
+
         <h3 style={{ margin: "0 0 6px 0" }}>Rule Labels</h3>
         <div className="muted">Each label can map to multiple CAD entities by handle.</div>
         <input
@@ -3379,10 +4255,27 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
           <div className="muted" style={{ marginBottom: 6 }}>
             {selectedEntityHandles.length} selected {selectedEntityHandles.length ? `• length ${selectedMeasurementSummary.length.toFixed(2)} • area ${selectedMeasurementSummary.area.toFixed(2)}` : ""}
           </div>
-          <div style={{ maxHeight: 120, overflow: "auto" }}>
+          <div style={{ maxHeight: 150, overflow: "auto", display: "grid", gap: 6 }}>
             {selectedCadEntities.slice(0, 20).map((entity) => (
-              <div key={entity.id} style={{ fontSize: 12, marginBottom: 4 }}>
-                <strong>{entity.handle}</strong> · {entity.layer_name} · {entity.entity_type}
+              <div key={entity.id} style={{ fontSize: 12, border: "1px solid #dfe7ef", borderRadius: 8, padding: 6, background: "#f8fbff" }}>
+                <div style={{ display: "flex", gap: 6, justifyContent: "space-between", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => zoomToEntity(entity)}
+                    style={{ padding: 0, border: 0, background: "transparent", fontWeight: 700, textAlign: "left", cursor: "pointer" }}
+                    title="Zoom to selected entity"
+                  >
+                    {entity.handle}
+                  </button>
+                  <button type="button" onClick={() => unselectEntity(entity.handle)} title="Unselect entity" style={{ padding: "1px 6px" }}>
+                    x
+                  </button>
+                </div>
+                <div className="muted">{entity.layer_name} · {entity.entity_type}</div>
+                <div className="muted">
+                  Area {Number(entity?.measurement_json?.measured_area || entity?.area || 0).toFixed(2)}
+                  {" "}· Length {Number(entity?.measurement_json?.measured_length || entity?.perimeter || 0).toFixed(2)}
+                </div>
               </div>
             ))}
           </div>
@@ -3401,7 +4294,52 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
             </div>
           </div>
         ) : null}
-        <div className="muted" style={{ marginBottom: 10 }}>Entity search results: {filteredCadEntities.length}</div>
+        <div className="muted" style={{ marginBottom: 6 }}>Entity search results: {filteredCadEntities.length}</div>
+        <div style={{ maxHeight: 220, overflow: "auto", border: "1px solid #eee", borderRadius: 10, padding: 6, marginBottom: 10, background: "#fff" }}>
+          {filteredCadEntities.slice(0, 120).map((entity) => {
+            const selected = selectedHandleSet.has(entity.handle);
+            const activeMapped = (activeLabelReport?.entities || []).some((row) => row.cad_handle === entity.handle);
+            return (
+              <div
+                key={`entity-row-${entity.handle || entity.id}`}
+                ref={(node) => {
+                  if (node && entity.handle) {
+                    entityRowRefs.current[entity.handle] = node;
+                  } else if (entity.handle) {
+                    delete entityRowRefs.current[entity.handle];
+                  }
+                }}
+                onClick={(event) => {
+                  selectEntityCandidate({
+                    handle: entity.handle,
+                    layer: entity.layer_name,
+                    entityType: entity.entity_type,
+                    source: "panel",
+                    score: 0,
+                  }, { additive: event.ctrlKey || event.metaKey });
+                  if (entity.layer_name) selectLayer(entity.layer_name, { additive: event.ctrlKey || event.metaKey });
+                }}
+                onDoubleClick={() => zoomToEntity(entity)}
+                style={{
+                  border: selected ? "1px solid #0b3d91" : activeMapped ? "1px solid #0f6b5f" : "1px solid #eee",
+                  background: selected ? "rgba(11,61,145,0.08)" : activeMapped ? "rgba(15,107,95,0.08)" : "#fff",
+                  borderRadius: 8,
+                  padding: 7,
+                  marginBottom: 6,
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+                  <strong>{entity.handle || "no-handle"}</strong>
+                  <span className="muted">{entity.entity_type}</span>
+                </div>
+                <div className="muted">{entity.layer_name || "Unknown layer"}</div>
+                {activeMapped ? <div style={{ color: "#0f6b5f", fontWeight: 700 }}>Mapped to active label</div> : null}
+              </div>
+            );
+          })}
+        </div>
         <div className="card" style={{ border: "1px solid #eee", borderRadius: 10, padding: 10, marginTop: 10 }}>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>View mode</div>
           <div className="muted" style={{ marginBottom: 8 }}>
@@ -3472,9 +4410,88 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
           </div>
         </div>
         {floorContext ? (
-          <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <span className="pill">{humanFloorContext(floorContext)} context</span>
-            <span className="muted">Only related layers are prioritized.</span>
+          <div className="card" style={{ marginTop: 8, border: "1px solid #dfe7ef", borderRadius: 12, padding: 10, background: "#f8fbff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>Repeated floor guidance</div>
+                <div className="muted">Use this if the same stair, wall, door, or slab pattern repeats on the next floor.</div>
+              </div>
+              <span className="pill">{humanFloorContext(floorContext)} context</span>
+            </div>
+            {floorWizard.hasGroup ? (
+              <>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Repeated layers across floors</div>
+                {floorWizard.crossFloorMatches.length ? (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                    {floorWizard.crossFloorMatches.slice(0, 8).map((item) => (
+                      <button
+                        key={item.layer}
+                        type="button"
+                        onClick={() => addLayersToSelection([item.layer])}
+                        title={`Add ${item.layer} to the current group`}
+                      >
+                        {item.layer}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="muted" style={{ marginBottom: 8 }}>No strong cross-floor repeats found for the current selection yet.</div>
+                )}
+                {floorWizard.sameFloorMatches.length ? (
+                  <div className="muted" style={{ marginBottom: 8 }}>
+                    Same-floor companions: {floorWizard.sameFloorMatches.slice(0, 4).map((item) => item.layer).join(", ")}
+                  </div>
+                ) : null}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" onClick={() => addLayersToSelection(floorWizard.crossFloorMatches.map((item) => item.layer))} disabled={!floorWizard.crossFloorMatches.length}>
+                    Add all repeats
+                  </button>
+                  <a href={buildFloorContextUrl(floorWizard.nextFloor)} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "7px 10px", borderRadius: 8, border: "1px solid #d0d7de", textDecoration: "none", color: "#111" }}>
+                    Continue to next floor
+                  </a>
+                </div>
+              </>
+            ) : (
+              <div className="muted">Pick a layer or select a layer group to see repeated components on other floors.</div>
+            )}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #d7dde5" }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Persistent floor template</div>
+              {floorWizard.savedTemplate ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div className="muted">
+                    Saved template for this floor. Layers: {Array.isArray(floorWizard.savedTemplate.layer_names) ? floorWizard.savedTemplate.layer_names.length : 0}
+                    {Array.isArray(floorWizard.savedTemplate.entity_handles) ? ` · Handles: ${floorWizard.savedTemplate.entity_handles.length}` : ""}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button type="button" onClick={() => applySavedFloorTemplate(floorWizard.savedTemplate, floorWizard.activeFloor)}>
+                      Apply saved template
+                    </button>
+                    <button type="button" onClick={captureCurrentFloorTemplate}>
+                      Update template from current selection
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div className="muted">
+                    No saved template for {humanFloorContext(floorWizard.activeFloor)} yet. Capture the current selection so it can be reused on the next floor.
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button type="button" onClick={captureCurrentFloorTemplate}>
+                      Capture current floor template
+                    </button>
+                    {floorWizard.previousSavedTemplate ? (
+                      <button
+                        type="button"
+                        onClick={() => applySavedFloorTemplate(floorWizard.previousSavedTemplate, floorWizard.previousFloor)}
+                      >
+                        Apply previous floor template
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         ) : null}
 
@@ -3492,7 +4509,9 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Selected layer</div>
             <div style={{ marginBottom: 6 }}>{selectedLayer}</div>
             <div className="muted" style={{ marginBottom: 8 }}>
-              {layerMeta[selectedLayer]?.tag ? `Tag: ${layerMeta[selectedLayer].tag}` : "No tag assigned."}
+              {layerMeta[selectedLayer]?.tag
+                ? `Tag: ${resolveTagLabel(layerMeta[selectedLayer].tag, tagOptions, suggestedOfficialMappings)}`
+                : "No tag assigned."}
             </div>
             {suggestedOfficialMappings.length ? (
               <>
@@ -3514,7 +4533,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
             ) : null}
             {layerMeta[selectedLayer]?.tag ? (
               <div className="muted" style={{ marginBottom: 8 }}>
-                Semantic match: {getTagOption(layerMeta[selectedLayer].tag, tagOptions).label}
+                Semantic match: {resolveTagLabel(layerMeta[selectedLayer].tag, tagOptions, suggestedOfficialMappings)}
                 {getTagOption(layerMeta[selectedLayer].tag, tagOptions).aliases.length ? ` • aliases: ${getTagOption(layerMeta[selectedLayer].tag, tagOptions).aliases.join(", ")}` : ""}
               </div>
             ) : null}
@@ -3601,82 +4620,67 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
             <button type="button" onClick={applyBulkTagToLayers}>Apply tag to matching layers</button>
           </div>
 
-          {suggestionEntries.length ? (
-            <div className="card" style={{ border: "1px solid #eee", borderRadius: 10, padding: 10, marginBottom: 10 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>Layer review marking helper</div>
-              <div className="muted" style={{ marginBottom: 8 }}>
-                Top suggestions per required semantic layer. Click drawing to pick an entity, then assign manually.
-              </div>
-              <div style={{ maxHeight: 280, overflow: "auto", display: "grid", gap: 8 }}>
-                {suggestionEntries.map(([semanticLayerName, entry]) => (
-                  <div key={semanticLayerName} style={{ border: "1px solid #eee", borderRadius: 8, padding: 8 }}>
-                    <div style={{ fontWeight: 600 }}>{semanticLayerName}{entry?.required ? " *" : ""}</div>
-                    {entry?.top_suggestion ? (
-                      <>
-                        <div className="muted">Top: {entry.top_suggestion.entity_handle} ({entry.top_suggestion.layer_name})</div>
-                        <div className="muted">Confidence: {entry.top_suggestion.confidence_score}%</div>
-                        <div className="muted" style={{ marginBottom: 6 }}>Reason: {entry.top_suggestion.reason}</div>
-                        {acceptedSuggestionState[semanticLayerName] ? (
-                          <div style={{ marginBottom: 6, fontSize: 12, fontWeight: 700, color: "#0f6b5f" }}>
-                            Accepted system configuration: {acceptedSuggestionState[semanticLayerName].handle}
-                          </div>
-                        ) : null}
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <button
-                            type="button"
-                            onClick={() => saveSemanticLayerMapping(
-                              semanticLayerName,
-                              entry.top_suggestion.entity_handle,
-                              "auto_suggested",
-                              entry.top_suggestion.confidence_score
-                            )}
-                          >
-                            Accept suggestion
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!selectedEntityHandle}
-                            onClick={() => saveSemanticLayerMapping(semanticLayerName, selectedEntityHandle, "user_selected", 100)}
-                          >
-                            Select manually
-                          </button>
-                          {entry?.optional ? (
-                            <button
-                              type="button"
-                              onClick={() => setSkippedOptionalLayers((prev) => ({ ...prev, [semanticLayerName]: true }))}
-                            >
-                              Skip optional layer
-                            </button>
-                          ) : null}
-                        </div>
-                        {selectedEntityHandle ? (
-                          <div className="muted" style={{ marginTop: 6 }}>Selected entity: {selectedEntityHandle}</div>
-                        ) : null}
-                        {skippedOptionalLayers[semanticLayerName] ? (
-                          <div className="muted" style={{ marginTop: 6 }}>Optional layer marked as skipped.</div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <div className="muted">No candidate found. Select manually from drawing.</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
           <div>
+            {selectedLayers.length ? (
+              <div className="card" style={{ border: "1px solid #dfe7ef", borderRadius: 10, padding: 10, marginBottom: 10, background: "#f8fbff" }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Selected layer group</div>
+                <div className="muted" style={{ marginBottom: 8 }}>
+                  {selectedLayers.length} layer{selectedLayers.length === 1 ? "" : "s"} selected. Use this when one entity is drawn across multiple CAD layers.
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                  {selectedLayers.map((layer) => (
+                    <span key={layer} className="pill">{layer}</span>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" onClick={() => clearLayerSelection()}>Clear group</button>
+                </div>
+              </div>
+            ) : null}
             {layerOrder.map((name) => (
               <div
-                className={`layer-row${selectedLayer === name ? " selected" : ""}`}
+                className={`layer-row${selectedLayerSet.has(name) ? " selected" : ""}`}
                 key={name}
-                onClick={() => selectLayer(name)}
+                ref={(node) => {
+                  if (node) {
+                    layerRowRefs.current[name] = node;
+                  } else {
+                    delete layerRowRefs.current[name];
+                  }
+                }}
+                onClick={(event) => selectLayer(name, { additive: event.ctrlKey || event.metaKey || event.shiftKey })}
                 style={{
                   borderLeft: selectedRuleRelatedLayers.includes(name) ? "3px solid #0b3d91" : undefined,
                   paddingLeft: selectedRuleRelatedLayers.includes(name) ? 10 : undefined,
-                  background: selectedRuleRelatedLayers.includes(name) ? "rgba(11,61,145,0.06)" : undefined,
+                  background: selectedRuleRelatedLayers.includes(name) || selectedLayerSet.has(name) ? "rgba(11,61,145,0.06)" : undefined,
                 }}
               >
+                <input
+                  type="checkbox"
+                  checked={selectedLayerSet.has(name)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    const checked = e.target.checked;
+                    startUiTransition(() => {
+                      setSelectedLayers((prev) => {
+                        if (checked) {
+                          if (prev.includes(name)) return prev;
+                          const next = [...prev, name];
+                          if (!selectedLayer) {
+                            setSelectedLayer(name);
+                          }
+                          return next;
+                        }
+                        const next = prev.filter((layer) => layer !== name);
+                        if (selectedLayer === name) {
+                          setSelectedLayer(next[0] || "");
+                        }
+                        return next;
+                      });
+                    });
+                  }}
+                />
                 <input
                   type="checkbox"
                   checked={!!layerMeta[name]?.visible}
@@ -4131,6 +5135,9 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
           <button type="button" onClick={() => setShowCadText((v) => !v)}>
             {showCadText ? "Hide CAD text" : "Show CAD text"}
           </button>
+          <button type="button" onClick={fitView}>Fit to screen</button>
+          <button type="button" onClick={resetView}>Reset view</button>
+          <button type="button" onClick={toggleFullscreenViewer}>Fullscreen</button>
           <span className="pill">CAD text: {showCadText ? `ON (${Math.min(textEntities.length, 1200)})` : "OFF"}</span>
           <span className="muted" style={{ marginLeft: "auto" }}>{hoverText}</span>
         </div>
@@ -4145,28 +5152,114 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
             </div>
           )}
           <canvas id="cad-canvas" ref={canvasRef} />
+          {pickCandidates?.candidates?.length ? (
+            <div
+              style={{
+                position: "absolute",
+                left: Math.max(8, Math.min(pickCandidates.x, (lastSizeRef.current.w || 800) - 300)),
+                top: Math.max(8, Math.min(pickCandidates.y, (lastSizeRef.current.h || 600) - 220)),
+                width: 292,
+                background: "#fff",
+                border: "1px solid #d0d7de",
+                borderRadius: 8,
+                boxShadow: "0 12px 30px rgba(16,20,24,0.18)",
+                padding: 8,
+                zIndex: 20,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                <strong style={{ fontSize: 13 }}>Select CAD entity</strong>
+                <button type="button" onClick={() => setPickCandidates(null)} style={{ padding: "1px 6px" }}>x</button>
+              </div>
+              <div style={{ display: "grid", gap: 6, maxHeight: 180, overflow: "auto" }}>
+                {pickCandidates.candidates.map((candidate) => (
+                  <button
+                    key={`${candidate.handle}-${candidate.layer}`}
+                    type="button"
+                    onClick={() => selectEntityCandidate(candidate, { additive: false })}
+                    style={{
+                      textAlign: "left",
+                      border: "1px solid #eee",
+                      borderRadius: 6,
+                      padding: 7,
+                      background: "#f8fbff",
+                    }}
+                  >
+                    <div style={{ fontWeight: 700 }}>{candidate.handle}</div>
+                    <div className="muted">{candidate.layer || "Unknown layer"} · {candidate.entityType}</div>
+                    <div className="muted">Area {Number(candidate.area || 0).toFixed(2)} · Length {Number(candidate.length || 0).toFixed(2)}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
-        {selectedLayer && drawingMode === "select" && !layerMeta[selectedLayer]?.tag ? (
+        {selectedLayer && drawingMode === "select" ? (
           <div className="layer-info-popup">
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Selected layer: {selectedLayer}</div>
             <div className="muted" style={{ marginBottom: 8 }}>
-              {layerMeta[selectedLayer]?.tag ? `Tag: ${layerMeta[selectedLayer].tag}` : "No tag assigned."}
+              {quickMarkAssignedLabel ? `Assigned: ${quickMarkAssignedLabel}` : "No tag assigned."}
             </div>
-            {suggestedOfficialMappings.length ? (
-              <div style={{ marginBottom: 10 }}>
-                <div className="muted" style={{ marginBottom: 6 }}>Click-to-map</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {suggestedOfficialMappings.map((item) => (
+            <div style={{ marginBottom: 10 }}>
+              <label className="muted" style={{ display: "block", marginBottom: 6 }} htmlFor="quick-layer-mark">
+                Mark selected layer as
+              </label>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <select
+                  id="quick-layer-mark"
+                  value={quickMarkTag || ""}
+                  onChange={(event) => setQuickMarkTag(event.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: 190,
+                    border: "1px solid #d7dde5",
+                    borderRadius: 10,
+                    padding: "8px 10px",
+                    background: "#fff",
+                    fontSize: 13,
+                  }}
+                >
+                  {quickMarkOptions.map((option) => (
+                    <option key={option.value || "none"} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => applyQuickLayerMark()}
+                  disabled={!quickMarkTag}
+                  style={{ padding: "8px 10px", fontSize: 12, fontWeight: 700 }}
+                >
+                  Apply
+                </button>
+              </div>
+              {quickMarkSelectedLayers.length > 1 ? (
+                <div className="muted" style={{ marginTop: 6 }}>
+                  Applies to {quickMarkSelectedLayers.length} selected layers.
+                </div>
+              ) : null}
+            </div>
+            {quickMarkOptions.some((item) => item.groupLabel === "Doors") ? (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                {quickMarkOptions
+                  .filter((item) => ["Doors", "Plot Boundary", "Building Footprint", "Setback", "Windows", "Stairs"].includes(item.groupLabel))
+                  .slice(0, 6)
+                  .map((item) => (
                     <button
-                      key={item.tag}
+                      key={`quick-${item.value}`}
                       type="button"
-                      onClick={() => sendLayerMappingSuggestion(item.tag)}
+                      onClick={() => applyQuickLayerMark(item.value)}
                       style={{ padding: "6px 8px", fontSize: 11 }}
                     >
-                      {item.tag}
+                      {item.groupLabel}
                     </button>
                   ))}
-                </div>
+              </div>
+            ) : null}
+            {suggestedOfficialMappings.length ? (
+              <div className="muted" style={{ marginBottom: 10 }}>
+                Suggested: {suggestedOfficialMappings.map((item) => item.label).join(", ")}
               </div>
             ) : null}
             {selectedLayerRules.length ? (
@@ -4280,19 +5373,37 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
             {(expertReport?.missing_required_labels || []).length ? (
               <ul style={{ margin: 0, paddingLeft: 16 }}>
                 {(expertReport?.missing_required_label_details || []).map((row, idx) => (
-                  <li key={`${row.label_key}-${idx}`} className="muted">{row.label_name} is required but missing.</li>
+                  <li key={`${row.label_key}-${idx}`} className="muted">{row.label_name} needs layer mapping, textual evidence, or officer marking.</li>
                 ))}
               </ul>
             ) : (
-              <div className="muted">No missing required labels.</div>
+              <div style={{ color: "#0f6b5f", fontWeight: 600 }}>
+                No blocking missing labels. Matched layer/text evidence is available for preliminary review.
+              </div>
             )}
           </div>
 
           <div className="card" style={{ border: "1px solid #eee", borderRadius: 10, padding: 10, marginBottom: 10 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>What to do next</div>
-            <div className="muted">
-              1) Confirm Plot Boundary first (closed polygon). 2) Map External Walls (multiple entities). 3) Confirm Front/Side/Rear building lines. 4) Confirm Dimensions and Text.
-            </div>
+            {expertReport?.approval_readiness?.status === "preliminary_clear" || expertReport?.approval_readiness?.status === "layer_text_available" ? (
+              <div style={{ color: "#0f6b5f", fontWeight: 600 }}>
+                Layer mapping and textual measurements are available. Review the report, answer applicant chat if needed, then continue AD ePermit decision flow.
+              </div>
+            ) : (
+              <div className="muted">
+                Resolve only the listed missing items. If the official text table already contains the value, regenerate the mapping report so it can be used as textual evidence.
+              </div>
+            )}
+            {(expertReport?.approval_readiness?.messages || []).length ? (
+              <div style={{ marginTop: 8, borderTop: "1px dashed #eee", paddingTop: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>Preliminary approval evidence</div>
+                {expertReport.approval_readiness.messages.map((message, idx) => (
+                  <div key={`ready-${idx}`} className="muted" style={{ marginBottom: 4 }}>
+                    {message}
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {(expertReport?.text_reference_hints || []).length ? (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>CAD text references detected</div>

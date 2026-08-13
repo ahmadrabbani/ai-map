@@ -1,0 +1,22 @@
+Deck QA scorecard
+
+story: 5/5
+specificity: 5/5
+rhythm: 5/5
+whitespace: 4/5
+chart clarity: 4/5
+typography: 5/5
+restraint: 4/5
+precision: 4/5
+coherence: 5/5
+reference delta: n/a
+
+Total: 41/45
+
+Profile gates:
+- Strategy thesis is clear: practical CAD-based AI scrutiny for LDA/local authority use.
+- BIM/Revit comparison is respectful and frames developed-market systems as advanced but harder/costlier to adopt locally.
+- Engineering labels remain meaningful for executive review.
+
+Known limitation:
+- Slide 14 uses screenshot placeholders because the final screenshot pack was not supplied for the deck.

@@ -10,15 +10,9 @@ class EnsureAdEpermitAccess
 {
     public function handle(Request $request, Closure $next): Response
     {
-        // Keep local development/test flow unblocked while still enabling
-        // strict AD ePermit control in non-local environments.
-        if (app()->environment(['local', 'testing'])) {
-            return $next($request);
-        }
-
         $user = $request->user();
         if (! $user) {
-            abort(403, 'AD ePermit access requires login.');
+            return redirect()->route('admin.plan.bp.ad.login');
         }
 
         $allowedEmails = array_values(array_filter(array_map(

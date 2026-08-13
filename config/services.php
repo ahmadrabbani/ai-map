@@ -35,4 +35,42 @@ return [
         ],
     ],
 
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+        'chat_model' => env('OPENAI_CHAT_MODEL', 'gpt-4o-mini'),
+    ],
+
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY'),
+        'chat_model' => env('GEMINI_CHAT_MODEL', 'gemini-3-flash-preview'),
+    ],
+
+    'google' => [
+        'maps_api_key' => env('GOOGLE_MAPS_API_KEY'),
+    ],
+
+    'epermit_oracle' => [
+        'enabled' => env('EPERMIT_ORACLE_ENABLED', false),
+        'endpoint' => env('EPERMIT_ORACLE_ENDPOINT'),
+        'timeout_seconds' => env('EPERMIT_ORACLE_TIMEOUT', 45),
+        'category_id' => env('EPERMIT_ORACLE_CATEGORY_ID', 30),
+        'sub_type_id' => env('EPERMIT_ORACLE_SUB_TYPE_ID', 15),
+        'type_id' => env('EPERMIT_ORACLE_TYPE_ID', 1),
+        'scheme_id' => env('EPERMIT_ORACLE_SCHEME_ID'),
+        'phase_id' => env('EPERMIT_ORACLE_PHASE_ID'),
+        'block_id' => env('EPERMIT_ORACLE_BLOCK_ID'),
+        'commercial_type_id' => env('EPERMIT_ORACLE_COMMERCIAL_TYPE_ID'),
+        'is_ebiz_objection' => env('EPERMIT_ORACLE_IS_EBIZ_OBJECTION', 0),
+        'version' => env('EPERMIT_ORACLE_VERSION', 1),
+        'login_id' => env('EPERMIT_ORACLE_LOGIN_ID', 31),
+    ],
+
+    'dfps' => [
+        'endpoint' => env('DFPS_PUSH_ENDPOINT'),
+        'username' => env('DFPS_USERNAME'),
+        'password' => env('DFPS_PASSWORD'),
+        'token' => env('DFPS_TOKEN'),
+        'timeout' => env('DFPS_TIMEOUT', 60),
+    ],
+
 ];

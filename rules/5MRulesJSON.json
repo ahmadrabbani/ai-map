@@ -1,30 +1,34 @@
 {
   "metadata": {
     "authority": "Lahore Development Authority",
-    "title": "Building & Zoning Regulations 2019 (Amended 2020)",
+    "title": "LDA Residential Rulebook",
     "plot_category": "5_marla_residential",
     "scheme_type": "approved",
     "road_width_ft": 30,
-    "plot_dimensions_ft": { "front": 25, "depth": 45 },
-    "plot_area_sqft": 1125
+    "plot_dimensions_ft": {
+      "front": 25,
+      "depth": 45
+    },
+    "plot_area_sqft": 1125,
+    "synced_from_rulebook_version": null,
+    "canonical_units": {}
   },
-
   "rules": [
     {
       "id": "SETBACK_FRONT",
       "type": "setback",
       "title": "Front setback requirement",
       "value_ft": 5,
-      "operator": "<=",
-      "description": "Maximum 5 ft front setback for 5 Marla in approved schemes."
+      "operator": ">=",
+      "description": "Front setback as per approved scheme."
     },
     {
       "id": "SETBACK_REAR",
       "type": "setback",
       "title": "Rear setback requirement",
       "value_ft": 5,
-      "operator": "<=",
-      "description": "Maximum 5 ft rear setback for 5 Marla residential plots."
+      "operator": ">=",
+      "description": "Rear setback as per approved scheme."
     },
     {
       "id": "SETBACK_SIDE",
@@ -32,7 +36,7 @@
       "title": "Side setback requirement",
       "value_ft": 0,
       "operator": "==",
-      "description": "No side setback required for 5 Marla plots in approved schemes."
+      "description": "Side setback requirement as per approved scheme."
     },
     {
       "id": "GROUND_COVERAGE",
@@ -40,7 +44,7 @@
       "title": "Maximum ground coverage",
       "value_percent": 75,
       "operator": "<=",
-      "description": "Ground floor may cover maximum 75% of plot area."
+      "description": "Maximum ground coverage limit."
     },
     {
       "id": "FAR_LIMIT",
@@ -48,7 +52,7 @@
       "title": "Maximum Floor Area Ratio",
       "value": 2.3,
       "operator": "<=",
-      "description": "Total covered area of all floors shall not exceed FAR 1:2.3."
+      "description": "Maximum FAR limit."
     },
     {
       "id": "MAX_STOREYS",
@@ -56,7 +60,7 @@
       "title": "Maximum number of storeys",
       "value": 3,
       "operator": "<=",
-      "description": "Maximum of Ground + First + Second storey allowed."
+      "description": "Maximum storeys allowed."
     },
     {
       "id": "MAX_HEIGHT",
@@ -64,15 +68,7 @@
       "title": "Maximum building height",
       "value_ft": 38,
       "operator": "<=",
-      "description": "Total height of building shall not exceed 38 ft."
-    },
-    {
-      "id": "STOREY_CLEAR_HEIGHT",
-      "type": "storey_height",
-      "title": "Minimum clear height per storey",
-      "value_ft": 9.5,
-      "operator": ">=",
-      "description": "Each storey (except basement) must have minimum 9 ft 6 in clear height."
+      "description": "Maximum height limit."
     },
     {
       "id": "PORCH_LENGTH",
@@ -80,15 +76,7 @@
       "title": "Maximum porch length",
       "value_ft": 20,
       "operator": "<=",
-      "description": "Car porch length must not exceed 20 ft."
-    },
-    {
-      "id": "PORCH_ROOM_NOT_ALLOWED",
-      "type": "porch",
-      "title": "Room above porch prohibition",
-      "value": false,
-      "operator": "==",
-      "description": "Room above porch is not allowed because 5 ft side space does not exist."
+      "description": "Maximum porch length allowed."
     },
     {
       "id": "REAR_TOILET_AREA",
@@ -96,7 +84,7 @@
       "title": "Rear toilet maximum area",
       "value_sqft": 40,
       "operator": "<=",
-      "description": "Rear corner toilet/bath may not exceed 40 sq ft area."
+      "description": "Rear toilet area limit."
     },
     {
       "id": "REAR_TOILET_HEIGHT",
@@ -104,28 +92,7 @@
       "title": "Rear toilet maximum height",
       "value_ft": 8,
       "operator": "<=",
-      "description": "Rear corner toilet/bath height may not exceed 8 ft."
-    },
-    {
-      "id": "WATER_TANKS",
-      "type": "services",
-      "title": "Mandatory water tanks",
-      "requirements": {
-        "underground_tank": true,
-        "overhead_tank": true
-      },
-      "description": "All houses above 3 Marla must have underground and overhead water tanks."
-    },
-    {
-      "id": "ENERGY_INSULATION",
-      "type": "energy",
-      "title": "Thermal insulation requirement",
-      "requirements": {
-        "walls_insulated": true,
-        "roof_insulated": true,
-        "windows_insulated": true
-      },
-      "description": "External walls, roof, and windows must follow energy conservation standards."
+      "description": "Rear toilet height limit."
     }
   ]
 }

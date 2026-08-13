@@ -106,13 +106,17 @@
     </style>
 
     @yield('header_styles')
+    @vite(['resources/js/app.js'])
 </head>
 <body>
+@php
+    $isAdEpermitContext = request()->is('admin/plan/ad-epermit*') || request()->routeIs('admin.plan.bp.ad.*');
+@endphp
 
 <nav class="navbar navbar-expand-lg navbar-dark app-navbar">
     <div class="container-fluid container-xl">
-        <a class="navbar-brand" href="#">
-            LDA <span>Plan Tools</span>
+        <a class="navbar-brand" href="{{ $isAdEpermitContext ? route('admin.plan.bp.ad.index') : url('/admin/plan/building-plan-applications') }}">
+            LDA <span>{{ $isAdEpermitContext ? 'AD ePermit' : 'Plan Tools' }}</span>
         </a>
 
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
@@ -123,31 +127,42 @@
 
         <div class="collapse navbar-collapse" id="mainNavbar">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                <li class="nav-item">
-                    <a class="nav-link {{ request()->is('admin/plan/check-setback') ? 'active' : '' }}"
-                       href="{{ url('/admin/plan/check-setback') }}">
-                        Setback Checker
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ request()->is('admin/plan/cad-compliance*') ? 'active' : '' }}"
-                       href="{{ url('/admin/plan/cad-compliance') }}">
-                        CAD Compliance
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ request()->is('admin/plan/approval-wizard*') ? 'active' : '' }}"
-                       href="{{ url('/admin/plan/approval-wizard') }}">
-                        CAD Approval Wizard
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ request()->is('admin/plan/building-plan-applications*') ? 'active' : '' }}"
-                       href="{{ route('admin.plan.bp.index') }}">
-                        Building Plan AI
-                    </a>
-                </li>
+                @if($isAdEpermitContext)
+                    <li class="nav-item"><a class="nav-link {{ request()->routeIs('admin.plan.bp.ad.index') ? 'active' : '' }}" href="{{ route('admin.plan.bp.ad.index') }}">Home / Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link {{ request()->query('status') === 'assigned' ? 'active' : '' }}" href="{{ route('admin.plan.bp.ad.index', ['status' => 'assigned']) }}">Building Plan Cases</a></li>
+                    <li class="nav-item"><a class="nav-link {{ request()->query('status') === 'under_process' ? 'active' : '' }}" href="{{ route('admin.plan.bp.ad.index', ['status' => 'under_process']) }}">Under Process Cases</a></li>
+                    <li class="nav-item"><a class="nav-link {{ request()->query('status') === 'observation' ? 'active' : '' }}" href="{{ route('admin.plan.bp.ad.index', ['status' => 'observation']) }}">Observation Cases</a></li>
+                    <li class="nav-item"><a class="nav-link {{ request()->query('status') === 'marked_to_dfps' ? 'active' : '' }}" href="{{ route('admin.plan.bp.ad.index', ['status' => 'marked_to_dfps']) }}">Marked to DFPS</a></li>
+                @else
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->is('admin/plan/check-setback') ? 'active' : '' }}"
+                           href="{{ url('/admin/plan/check-setback') }}">
+                            Setback Checker
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->is('admin/plan/cad-compliance*') ? 'active' : '' }}"
+                           href="{{ url('/admin/plan/cad-compliance') }}">
+                            CAD Compliance
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->is('admin/plan/approval-wizard*') ? 'active' : '' }}"
+                           href="{{ url('/admin/plan/approval-wizard') }}">
+                            CAD Approval Wizard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->is('admin/plan/building-plan-applications*') ? 'active' : '' }}"
+                           href="{{ route('admin.plan.bp.index') }}">
+                            Building Plan AI
+                        </a>
+                    </li>
+                @endif
             </ul>
+            @if($isAdEpermitContext && auth()->check())
+                <a class="btn btn-outline-light btn-sm me-2" href="{{ route('admin.plan.bp.ad.index') }}">Back to Dashboard</a>
+            @endif
         </div>
     </div>
 </nav>
@@ -172,5 +187,6 @@
 ></script>
 
 @yield('footer_scripts')
+@stack('footer_scripts_inline')
 </body>
 </html>

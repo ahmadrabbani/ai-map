@@ -1,0 +1,12 @@
+Hi everyone. In this first flow, we will walk through the applicant side of the LDA AI Verification Process.
+
+The applicant starts from the homepage by choosing Applicant Login. They enter their CNIC number, add the password, and open their personal dashboard. From here, they can see previous applications and their current status. To begin a new case, they select Submit New Building Plan.
+
+The first major step is plan upload. The applicant chooses the building plan file in DWG, DXF, CAD, or PDF format. A clear file name with plot, block, or scheme details helps the system read and auto-fill the property information. After the file is attached, the applicant clicks Next and the AI pre-scrutiny window opens.
+
+In the background, the system checks the drawing confidence, reads CAD text and dimensions, and prepares the information needed for the next step. The applicant then proceeds to property verification, where the Geo Verification Panel confirms the plot location on the map and marks it as matched.
+
+Next, the applicant verifies personal information, then uploads required documents such as CNIC front, CNIC back, and ownership proof. Optional documents can also be attached if needed.
+
+At the final step, the applicant generates the AI Scrutiny Report. The system validates documents, checks planning rules, extracts measurements like setbacks and coverage, and creates a rule-by-rule result. The applicant can open the report, review the recommendation, confidence score, pass or fail results, and track the application status.
+

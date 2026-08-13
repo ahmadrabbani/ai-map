@@ -33,7 +33,7 @@ class CadComplianceController extends Controller
         ]);
 
         $file = $request->file('dwg_file');
-        $rulesetKey = $request->input('ruleset_key', '5_marla_residential');
+        $rulesetKey = $request->input('ruleset_key', 'residential_building_approval');
 
         $uploadDir = 'uploads/cad';
         Storage::disk('local')->makeDirectory($uploadDir);
