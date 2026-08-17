@@ -1175,6 +1175,13 @@ PROMPT;
         $label->save();
         $this->syncTrainingLabel($submission, $label);
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'Layer mapping applied successfully.',
+                'layer_map' => $decoded,
+            ]);
+        }
+
         return redirect()->route('admin.plan.cad-layer-viewer', $submission->id)
             ->with('status', 'Layer mapping saved.');
     }

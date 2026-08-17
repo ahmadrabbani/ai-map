@@ -869,6 +869,7 @@ function App() {
   const rulesMetadata = config.rulesMetadata || {};
   const floorContext = config.floorContext || "ground_floor";
   const canvasRef = useRef(null);
+  const layerInfoPopupRef = useRef(null);
   const rendererRef = useRef(null);
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
@@ -901,6 +902,7 @@ function App() {
   const textOverlayObjectsRef = useRef([]);
   const textOverlayGroupRef = useRef(null);
   const autoAppliedSuggestionRowsRef = useRef(new Set());
+  const applyingQuickMarkRef = useRef(false);
 
   const [layerMeta, setLayerMeta] = useState({});
   const [layerOrder, setLayerOrder] = useState([]);
@@ -976,6 +978,8 @@ function App() {
   const hoveredEntityHandleRef = useRef("");
   const [hoveredEntityHandle, setHoveredEntityHandle] = useState("");
   const [pickCandidates, setPickCandidates] = useState(null);
+  const [applyingQuickMark, setApplyingQuickMark] = useState(false);
+  const [quickMarkFeedback, setQuickMarkFeedback] = useState(null);
 
   useEffect(() => {
     layerMetaRef.current = layerMeta;
@@ -1083,6 +1087,16 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        if (pickCandidates) {
+          setPickCandidates(null);
+          return;
+        }
+        if (selectedLayer && drawingMode === "select") {
+          clearLayerSelection();
+        }
+        return;
+      }
       if (event.key === "Enter" && drawingMode !== "select") {
         event.preventDefault();
         finishCurrentShape();
@@ -1090,7 +1104,19 @@ function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [drawingMode, currentPoints]);
+  }, [drawingMode, currentPoints, pickCandidates, selectedLayer]);
+
+  useEffect(() => {
+    if (!selectedLayer || drawingMode !== "select") return undefined;
+
+    const closeOnOutsidePointer = (event) => {
+      if (layerInfoPopupRef.current?.contains(event.target)) return;
+      clearLayerSelection();
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+  }, [selectedLayer, drawingMode]);
 
   useEffect(() => {
     const measureTopbar = () => {
@@ -3109,6 +3135,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
 
   function selectLayer(layer, options = {}) {
     if (!layer) return;
+    setQuickMarkFeedback(null);
     const additive = !!options.additive;
     startUiTransition(() => {
       setSelectedLayer(layer);
@@ -4132,20 +4159,77 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     setStatusMessage(`Sent ${layerNames.join(", ")} to the parent mapper as ${officialTag}.`);
   }
 
-  function applyQuickLayerMark(tagValue = quickMarkTag) {
+  async function applyQuickLayerMark(tagValue = quickMarkTag) {
+    if (applyingQuickMarkRef.current) return;
     const tag = String(tagValue || "").trim();
     if (!tag) {
-      setStatusMessage("Choose a layer type before applying the mapping.");
+      const message = "Choose a layer type before applying the mapping.";
+      setQuickMarkFeedback({ type: "error", message });
+      setStatusMessage(message);
+      return;
+    }
+    if (!quickMarkOptions.some((option) => option.value === tag)) {
+      const message = "Choose a valid layer type before applying the mapping.";
+      setQuickMarkFeedback({ type: "error", message });
+      setStatusMessage(message);
       return;
     }
 
     const layerNames = quickMarkSelectedLayers.length ? quickMarkSelectedLayers : [selectedLayer].filter(Boolean);
-    if (!layerNames.length) return;
+    if (!layerNames.length || layerNames.some((layerName) => !layerMeta[layerName])) {
+      const message = "Select a valid CAD layer before applying the mapping.";
+      setQuickMarkFeedback({ type: "error", message });
+      setStatusMessage(message);
+      return;
+    }
+    if (!config.storeUrl) {
+      const message = "The layer mapping endpoint is unavailable. Reload the CAD view and try again.";
+      setQuickMarkFeedback({ type: "error", message });
+      setStatusMessage(message);
+      return;
+    }
 
-    layerNames.forEach((layerName) => updateLayerMeta(layerName, { tag }));
-    setQuickMarkTag(tag);
-    const label = resolveTagLabel(tag, tagOptions, suggestedOfficialMappings);
-    setStatusMessage(`Marked ${layerNames.join(", ")} as ${label}. Click Save mapping to persist.`);
+    const nextLayerMeta = { ...layerMeta };
+    layerNames.forEach((layerName) => {
+      nextLayerMeta[layerName] = { ...nextLayerMeta[layerName], tag };
+    });
+
+    applyingQuickMarkRef.current = true;
+    setApplyingQuickMark(true);
+    setQuickMarkFeedback(null);
+    try {
+      const response = await fetch(config.storeUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-CSRF-TOKEN": config.csrfToken,
+        },
+        body: JSON.stringify({ layer_map_json: JSON.stringify(nextLayerMeta) }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.message || result.errors?.layer_map_json?.[0] || "The layer mapping could not be saved.");
+      }
+
+      const refreshedLayerMap = normalizePersistedLayerMap(result.layer_map || nextLayerMeta);
+      setLayerMeta(refreshedLayerMap);
+      layerMetaRef.current = refreshedLayerMap;
+      setQuickMarkTag(tag);
+      const label = resolveTagLabel(tag, tagOptions, suggestedOfficialMappings);
+      const message = result.message || `Mapped ${layerNames.join(", ")} as ${label}.`;
+      setQuickMarkFeedback({ type: "success", message });
+      setStatusMessage(message);
+      render();
+      resizeFnRef.current?.();
+    } catch (error) {
+      const message = error?.message || "The layer mapping could not be saved. Please try again.";
+      setQuickMarkFeedback({ type: "error", message });
+      setStatusMessage(message);
+    } finally {
+      applyingQuickMarkRef.current = false;
+      setApplyingQuickMark(false);
+    }
   }
 
   return (
@@ -5102,7 +5186,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       </div>
 
       <div className="main" style={{ display: "flex", minWidth: 0 }}>
-        <div style={{ flex: "0 0 66.666%", position: "relative", borderRight: "1px solid rgba(16,20,24,0.12)" }}>
+        <div className="cad-view-column">
         <div
           className="topbar"
           ref={centerTopbarRef}
@@ -5141,62 +5225,80 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
           <span className="pill">CAD text: {showCadText ? `ON (${Math.min(textEntities.length, 1200)})` : "OFF"}</span>
           <span className="muted" style={{ marginLeft: "auto" }}>{hoverText}</span>
         </div>
-        <div className="canvas-wrap" style={{ inset: `${topbarHeight}px 0 0 0` }}>
-          {loading && (
-            <div className="loading-overlay">
-              <div className="loading-box">
-                <div style={{ fontWeight: 600 }}>Preparing drawing…</div>
-                <div className="muted" style={{ marginTop: 6 }}>{loadingMessage}</div>
-                <div className="loading-bar"><span /></div>
+        <div
+          className="canvas-wrap"
+          style={{ inset: `${topbarHeight}px 0 0 0` }}
+          tabIndex={0}
+          aria-label="Scrollable CAD drawing viewport"
+        >
+          <div className="cad-canvas-stage">
+            {loading && (
+              <div className="loading-overlay">
+                <div className="loading-box">
+                  <div style={{ fontWeight: 600 }}>Preparing drawing…</div>
+                  <div className="muted" style={{ marginTop: 6 }}>{loadingMessage}</div>
+                  <div className="loading-bar"><span /></div>
+                </div>
               </div>
-            </div>
-          )}
-          <canvas id="cad-canvas" ref={canvasRef} />
-          {pickCandidates?.candidates?.length ? (
-            <div
-              style={{
-                position: "absolute",
-                left: Math.max(8, Math.min(pickCandidates.x, (lastSizeRef.current.w || 800) - 300)),
-                top: Math.max(8, Math.min(pickCandidates.y, (lastSizeRef.current.h || 600) - 220)),
-                width: 292,
-                background: "#fff",
-                border: "1px solid #d0d7de",
-                borderRadius: 8,
-                boxShadow: "0 12px 30px rgba(16,20,24,0.18)",
-                padding: 8,
-                zIndex: 20,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-                <strong style={{ fontSize: 13 }}>Select CAD entity</strong>
-                <button type="button" onClick={() => setPickCandidates(null)} style={{ padding: "1px 6px" }}>x</button>
+            )}
+            <canvas id="cad-canvas" ref={canvasRef} />
+            {pickCandidates?.candidates?.length ? (
+              <div
+                style={{
+                  position: "absolute",
+                  left: Math.max(8, Math.min(pickCandidates.x, (lastSizeRef.current.w || 800) - 300)),
+                  top: Math.max(8, Math.min(pickCandidates.y, (lastSizeRef.current.h || 600) - 220)),
+                  width: 292,
+                  background: "#fff",
+                  border: "1px solid #d0d7de",
+                  borderRadius: 8,
+                  boxShadow: "0 12px 30px rgba(16,20,24,0.18)",
+                  padding: 8,
+                  zIndex: 20,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                  <strong style={{ fontSize: 13 }}>Select CAD entity</strong>
+                  <button type="button" onClick={() => setPickCandidates(null)} aria-label="Close entity choices" style={{ padding: "1px 6px" }}>&times;</button>
+                </div>
+                <div style={{ display: "grid", gap: 6, maxHeight: 180, overflow: "auto" }}>
+                  {pickCandidates.candidates.map((candidate) => (
+                    <button
+                      key={`${candidate.handle}-${candidate.layer}`}
+                      type="button"
+                      onClick={() => selectEntityCandidate(candidate, { additive: false })}
+                      style={{
+                        textAlign: "left",
+                        border: "1px solid #eee",
+                        borderRadius: 6,
+                        padding: 7,
+                        background: "#f8fbff",
+                      }}
+                    >
+                      <div style={{ fontWeight: 700 }}>{candidate.handle}</div>
+                      <div className="muted">{candidate.layer || "Unknown layer"} · {candidate.entityType}</div>
+                      <div className="muted">Area {Number(candidate.area || 0).toFixed(2)} · Length {Number(candidate.length || 0).toFixed(2)}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div style={{ display: "grid", gap: 6, maxHeight: 180, overflow: "auto" }}>
-                {pickCandidates.candidates.map((candidate) => (
-                  <button
-                    key={`${candidate.handle}-${candidate.layer}`}
-                    type="button"
-                    onClick={() => selectEntityCandidate(candidate, { additive: false })}
-                    style={{
-                      textAlign: "left",
-                      border: "1px solid #eee",
-                      borderRadius: 6,
-                      padding: 7,
-                      background: "#f8fbff",
-                    }}
-                  >
-                    <div style={{ fontWeight: 700 }}>{candidate.handle}</div>
-                    <div className="muted">{candidate.layer || "Unknown layer"} · {candidate.entityType}</div>
-                    <div className="muted">Area {Number(candidate.area || 0).toFixed(2)} · Length {Number(candidate.length || 0).toFixed(2)}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
         {selectedLayer && drawingMode === "select" ? (
-          <div className="layer-info-popup">
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>Selected layer: {selectedLayer}</div>
+          <div className="layer-info-popup" ref={layerInfoPopupRef} role="dialog" aria-modal="false" aria-labelledby="layer-info-title">
+            <div className="layer-info-header">
+              <div id="layer-info-title" style={{ fontWeight: 600 }}>Selected layer: {selectedLayer}</div>
+              <button
+                type="button"
+                className="layer-info-close"
+                onClick={clearLayerSelection}
+                aria-label="Close selected layer panel"
+                title="Close"
+              >
+                &times;
+              </button>
+            </div>
             <div className="muted" style={{ marginBottom: 8 }}>
               {quickMarkAssignedLabel ? `Assigned: ${quickMarkAssignedLabel}` : "No tag assigned."}
             </div>
@@ -5228,12 +5330,20 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
                 <button
                   type="button"
                   onClick={() => applyQuickLayerMark()}
-                  disabled={!quickMarkTag}
+                  disabled={!quickMarkTag || applyingQuickMark}
                   style={{ padding: "8px 10px", fontSize: 12, fontWeight: 700 }}
                 >
-                  Apply
+                  {applyingQuickMark ? "Applying..." : "Apply"}
                 </button>
               </div>
+              {quickMarkFeedback ? (
+                <div
+                  className={`layer-info-feedback ${quickMarkFeedback.type}`}
+                  role={quickMarkFeedback.type === "error" ? "alert" : "status"}
+                >
+                  {quickMarkFeedback.message}
+                </div>
+              ) : null}
               {quickMarkSelectedLayers.length > 1 ? (
                 <div className="muted" style={{ marginTop: 6 }}>
                   Applies to {quickMarkSelectedLayers.length} selected layers.
@@ -5250,6 +5360,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
                       key={`quick-${item.value}`}
                       type="button"
                       onClick={() => applyQuickLayerMark(item.value)}
+                      disabled={applyingQuickMark}
                       style={{ padding: "6px 8px", fontSize: 11 }}
                     >
                       {item.groupLabel}
@@ -5280,7 +5391,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
         ) : null}
         <div className="muted" style={{ position: "absolute", bottom: 8, right: 12 }}>{summaryText}</div>
         </div>
-        <div style={{ flex: "0 0 33.333%", padding: 12, overflow: "auto", background: "#fcfbfa" }}>
+        <div className="cad-details-panel">
           <div style={{ fontWeight: 700, marginBottom: 8 }}>AI/Chat Mapping Panel</div>
           <div className="card" style={{ border: "1px solid #eee", borderRadius: 10, padding: 10, marginBottom: 10 }}>
             <div style={{ fontWeight: 700, marginBottom: 6, color: "#0b3d91" }}>Rule Assistant</div>

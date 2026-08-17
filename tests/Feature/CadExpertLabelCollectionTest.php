@@ -87,4 +87,38 @@ class CadExpertLabelCollectionTest extends TestCase
         $this->assertSame('PLOT', $training->layer_map['plot']);
         $this->assertSame('GF_OUTLINE', $training->layer_map['building']);
     }
+
+    public function test_layer_viewer_can_apply_a_map_without_reloading(): void
+    {
+        $submission = CadSubmission::create([
+            'original_filename' => 'large-plan.dwg',
+            'stored_dwg_path' => 'uploads/cad/large-plan.dwg',
+            'ruleset_key' => '5_marla_residential',
+        ]);
+
+        $viewerMap = [
+            'A-PLOT' => ['visible' => true, 'tag' => 'plot_boundary'],
+            'A-WALL' => ['visible' => true, 'tag' => 'external_walls'],
+        ];
+
+        $response = $this->postJson(route('admin.plan.cad-layer-map.store', ['id' => $submission->id]), [
+            'layer_map_json' => json_encode($viewerMap),
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJson([
+                'message' => 'Layer mapping applied successfully.',
+                'layer_map' => $viewerMap,
+            ]);
+
+        $this->assertDatabaseHas('cad_expert_labels', [
+            'cad_submission_id' => $submission->id,
+            'layer_map_json' => json_encode($viewerMap),
+        ]);
+        $this->assertSame(
+            $viewerMap,
+            CadTrainingLabel::where('cad_submission_id', $submission->id)->firstOrFail()->layer_map
+        );
+    }
 }
