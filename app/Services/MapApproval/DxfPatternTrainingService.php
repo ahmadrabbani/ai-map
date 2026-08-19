@@ -4,6 +4,7 @@ namespace App\Services\MapApproval;
 
 use App\Models\DxfPatternTrainingExample;
 use App\Models\CadExpertLabel;
+use App\Models\CadExpertMarking;
 use App\Models\CadSubmission;
 use App\Models\MapDrawing;
 use App\Models\PublicBuildingPlanApplication;
@@ -128,6 +129,56 @@ class DxfPatternTrainingService
                 'captured_at' => now(),
             ]
         );
+    }
+
+    public function captureExpertMarking(CadSubmission $submission, CadExpertMarking $marking): void
+    {
+        $training = DxfPatternTrainingExample::firstOrNew(['cad_submission_id' => $submission->id]);
+        $snapshot = is_array($training->feature_snapshot_json) ? $training->feature_snapshot_json : [];
+        $examples = collect((array) ($snapshot['learning_examples'] ?? []))
+            ->reject(fn ($row) => (int) data_get($row, 'marking_id') === (int) $marking->id)
+            ->values();
+        $examples->push([
+            'marking_id' => $marking->id,
+            'label_key' => $marking->label_key,
+            'geometry_type' => $marking->geometry_type,
+            'points' => $marking->points_json ?: [],
+            'measurement' => $marking->measurement_json ?: [],
+            'snapshot_path' => $marking->snapshot_path,
+            'selected_handles' => $marking->selected_handles_json ?: [],
+            'facts' => $marking->facts_json ?: [],
+            'rule_code' => $marking->rule_code,
+            'compliance_status' => $marking->compliance_status,
+            'officer_notes' => $marking->remarks,
+            'status' => $marking->status,
+            'captured_at' => $marking->created_at?->toISOString() ?? now()->toISOString(),
+        ]);
+        $snapshot['cad_submission_id'] = $submission->id;
+        $snapshot['learning_examples'] = $examples->all();
+
+        $training->fill([
+            'cad_submission_id' => $submission->id,
+            'map_drawing_id' => data_get($marking->facts_json, 'map_drawing_id') ?: $training->map_drawing_id,
+            'ad_decision' => $training->ad_decision ?: 'expert_region_labeled',
+            'ad_outcome' => $training->ad_outcome ?: 'expert_region_labeled',
+            'ad_status' => $training->ad_status ?: 'expert_region_saved',
+            'feature_snapshot_json' => $snapshot,
+            'label_source' => $training->label_source ?: 'expert_region',
+            'captured_at' => now(),
+        ])->save();
+    }
+
+    public function removeExpertMarking(CadSubmission $submission, CadExpertMarking $marking): void
+    {
+        $training = DxfPatternTrainingExample::where('cad_submission_id', $submission->id)->first();
+        if (! $training) return;
+        $snapshot = is_array($training->feature_snapshot_json) ? $training->feature_snapshot_json : [];
+        $snapshot['learning_examples'] = collect((array) ($snapshot['learning_examples'] ?? []))
+            ->reject(fn ($row) => (int) data_get($row, 'marking_id') === (int) $marking->id)
+            ->values()->all();
+        $training->feature_snapshot_json = $snapshot;
+        $training->captured_at = now();
+        $training->save();
     }
 
     private function featureSnapshot(array $analysisJson, array $patternProfile, array $cadConfidence, array $ruleResults, PublicBuildingPlanApplication $application): array

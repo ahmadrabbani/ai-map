@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\CadSubmission;
 use App\Models\CadTrainingLabel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class CadExpertLabelCollectionTest extends TestCase
@@ -120,5 +121,61 @@ class CadExpertLabelCollectionTest extends TestCase
             $viewerMap,
             CadTrainingLabel::where('cad_submission_id', $submission->id)->firstOrFail()->layer_map
         );
+    }
+
+    public function test_officer_can_save_a_region_snapshot_as_structured_learning_data(): void
+    {
+        Storage::fake('public');
+        $submission = CadSubmission::create([
+            'original_filename' => 'stairs.dxf',
+            'stored_dwg_path' => 'uploads/cad/stairs.dwg',
+            'ruleset_key' => '5_marla_residential',
+        ]);
+        $png = 'data:image/png;base64,'.base64_encode(
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
+        );
+
+        $response = $this->postJson(route('admin.plan.cad-expert-markings.store', $submission->id), [
+            'label_key' => 'stairs',
+            'label_name' => 'Stairs',
+            'geometry_type' => 'rectangle',
+            'points_json' => [['x' => 0, 'y' => 0], ['x' => 10, 'y' => 0], ['x' => 10, 'y' => 8], ['x' => 0, 'y' => 8]],
+            'measurement_json' => ['area' => 80, 'perimeter' => 36, 'point_count' => 4],
+            'status' => 'confirmed',
+            'snapshot_data_url' => $png,
+            'selected_handles_json' => ['A1', 'A2'],
+            'facts_json' => [
+                'observation_type' => 'stairs',
+                'count' => 20,
+                'unit' => 'count',
+                'expected_value' => '20 stairs',
+                'floor' => 'ground_floor',
+                'ai_text_evidence' => [
+                    'raw_text' => 'UP 20 RISERS',
+                    'cad_layer' => 'STAIR-TEXT',
+                    'cad_handle' => 'A1',
+                    'x' => 10.5,
+                    'y' => 8.25,
+                    'parsed_value_ft' => 20,
+                    'semantic_hints' => ['stairs'],
+                    'officer_verified' => true,
+                ],
+            ],
+            'rule_code' => 'STAIR_COUNT',
+            'compliance_status' => 'compliant',
+            'remarks' => 'Twenty stair risers meet the referenced requirement.',
+        ]);
+
+        $response->assertOk()->assertJsonPath('marking.facts_json.count', 20);
+        $marking = \App\Models\CadExpertMarking::where('cad_submission_id', $submission->id)->firstOrFail();
+        Storage::disk('public')->assertExists($marking->snapshot_path);
+        $this->assertSame(['A1', 'A2'], $marking->selected_handles_json);
+        $this->assertSame('STAIR_COUNT', $marking->rule_code);
+        $this->assertSame('compliant', $marking->compliance_status);
+        $training = \App\Models\DxfPatternTrainingExample::where('cad_submission_id', $submission->id)->firstOrFail();
+        $example = $training->feature_snapshot_json['learning_examples'][0];
+        $this->assertSame($marking->id, $example['marking_id']);
+        $this->assertSame('UP 20 RISERS', $example['facts']['ai_text_evidence']['raw_text']);
+        $this->assertTrue($example['facts']['ai_text_evidence']['officer_verified']);
     }
 }

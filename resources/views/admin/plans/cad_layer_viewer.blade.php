@@ -192,6 +192,18 @@
       background: #fcfbfa;
     }
 
+    .layout.officer-simple-layout > .sidebar { display: none; }
+    .layout.officer-simple-layout .cad-view-column { flex: 0 0 68%; }
+    .layout.officer-simple-layout .cad-details-panel { flex: 1 1 32%; }
+    .cad-details-panel.officer-simple > :not(.officer-workflow) { display: none; }
+    .learning-snapshot { width: 100%; max-height: 220px; object-fit: contain; border: 1px solid #cad5e1; border-radius: 8px; background: #fff; }
+
+    @media (max-width: 900px) {
+      .layout.officer-simple-layout { display: block; height: auto; min-height: 0; }
+      .layout.officer-simple-layout .cad-view-column { height: 62vh; min-height: 460px; border-right: 0; }
+      .layout.officer-simple-layout .cad-details-panel { max-height: none; }
+    }
+
     .topbar {
       padding: 10px 14px;
       border-bottom: 1px solid var(--line);
@@ -395,6 +407,8 @@
           <a href="{{ route('admin.plan.cad-expert-label.edit', $submission->id) }}">Expert Labels</a>
           <a href="{{ route('admin.plan.cad-planner-review', ['id' => $submission->id, 'map_drawing_id' => optional($mapDrawing)->id]) }}">Planner Review</a>
           <a href="{{ route('admin.plan.cad-layer-viewer', $submission->id) }}">Layer Viewer</a>
+          <a href="{{ route('admin.plan.cad-tagging.building-plans') }}">Tagging Queue</a>
+          <a href="{{ route('admin.plan.cad-tagging.accuracy') }}">Accuracy</a>
         </nav>
         <div class="actions">
           <a class="btn ghost" href="{{ route('admin.plan.cad-expert-label.edit', $submission->id) }}">Back to labels</a>
@@ -412,6 +426,15 @@
   @php
     $activeLayerConfig = file_exists(base_path('rules/layer_35.json')) ? 'layer_35.json' : 'layers.json';
   @endphp
+  @php
+    $cadTextReport = [
+      'metrics' => (array) data_get(optional($mapDrawing)->metadata_json, 'cad_text_measurement_metrics', []),
+      'room_areas' => (array) data_get(optional($mapDrawing)->metadata_json, 'cad_text_room_areas', []),
+      'plot' => (array) data_get(optional($mapDrawing)->metadata_json, 'cad_text_plot', []),
+      'applicant' => (array) data_get(optional($mapDrawing)->metadata_json, 'cad_text_applicant', []),
+      'sections' => (array) data_get(optional($mapDrawing)->metadata_json, 'cad_text_sections', []),
+    ];
+  @endphp
   <script>
     window.__cadViewerConfig = {
       submissionId: {{ $submission->id }},
@@ -425,6 +448,7 @@
       rulesMetadata: @json($rulesMetadata ?? new stdClass()),
       expertResults: @json($expertResults ?? []),
       analysisResult: @json($submission->analysis_result ?? new stdClass()),
+      cadTextReport: @json($cadTextReport),
       trainingLabel: @json(optional($submission->trainingLabel)->toArray() ?? new stdClass()),
       entitySummary: @json($entitySummary ?? new stdClass()),
       rulesetOverview: @json($rulesetOverview ?? new stdClass()),
@@ -451,6 +475,11 @@
       expertMarkingReportUrl: "{{ route('admin.plan.cad-expert-markings.report', $submission->id) }}",
       cadTextReferencesStoreUrl: "{{ route('admin.plan.cad-text-references.store', $submission->id) }}",
       cadAssistantChatUrl: "{{ route('admin.plan.cad-assistant-chat', $submission->id) }}",
+      taggingWorkspaceUrl: "{{ route('api.cad.workspace', $submission->id) }}",
+      predictionReviewUrlTemplate: "/api/cad-submissions/{{ $submission->id }}/predictions/__PREDICTION_ID__/review",
+      predictionBulkReviewUrl: "{{ route('api.cad.predictions.bulk-review', $submission->id) }}",
+      submitVerifiedTagsUrl: "{{ route('api.cad.tags.submit-verified', $submission->id) }}",
+      evaluateTagsUrl: "{{ route('api.cad.evaluate', $submission->id) }}",
       activeLayerConfig: @json($activeLayerConfig),
       statusMessage: @json(session('status')),
       hasDxf: {{ $submission->stored_dxf_path ? 'true' : 'false' }},

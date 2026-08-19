@@ -16,6 +16,11 @@ class CadExpertMarking extends Model
         'geometry_type',
         'points_json',
         'measurement_json',
+        'snapshot_path',
+        'selected_handles_json',
+        'facts_json',
+        'rule_code',
+        'compliance_status',
         'status',
         'source',
         'updated_by',
@@ -34,6 +39,8 @@ class CadExpertMarking extends Model
         'geometry_json' => 'array',
         'points_json' => 'array',
         'measurement_json' => 'array',
+        'selected_handles_json' => 'array',
+        'facts_json' => 'array',
     ];
 
     public function submission()

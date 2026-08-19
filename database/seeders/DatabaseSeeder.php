@@ -23,5 +23,6 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $this->call(AdEpermitDemoSeeder::class);
+        $this->call(\Database\Seeders\CadRulesSeeder::class);
     }
 }

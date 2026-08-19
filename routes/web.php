@@ -21,6 +21,7 @@ use App\Http\Controllers\DdtpReviewController;
 use App\Http\Controllers\PublicApplicantAuthController;
 use App\Http\Controllers\PublicBuildingPlanPortalController;
 use App\Http\Controllers\PublicBuildingPlanChatController;
+use App\Http\Controllers\CadTaggingDashboardController;
 
 Route::get('/admin/plan/check-setback', [PlanCheckController::class, 'showForm'])
     ->name('admin.plan.check-setback.form');
@@ -103,6 +104,11 @@ Route::post('/admin/plan/cad-submissions/{id}/text-references', [CadExpertLabelC
     ->name('admin.plan.cad-text-references.store');
 Route::post('/admin/plan/cad-submissions/{id}/assistant-chat', [CadExpertLabelController::class, 'assistantChat'])
     ->name('admin.plan.cad-assistant-chat');
+
+Route::get('/admin/plan/cad-tagging/building-plans', [CadTaggingDashboardController::class, 'buildingPlans'])
+    ->name('admin.plan.cad-tagging.building-plans');
+Route::get('/admin/plan/cad-tagging/accuracy', [CadTaggingDashboardController::class, 'accuracy'])
+    ->name('admin.plan.cad-tagging.accuracy');
 
 Route::get('/admin/plan/approval-wizard', [CadApprovalWizardController::class, 'index'])
     ->name('admin.plan.approval-wizard.index');

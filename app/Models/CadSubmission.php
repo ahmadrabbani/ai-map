@@ -42,4 +42,19 @@ class CadSubmission extends Model
     {
         return $this->hasOne(CadExpertLabel::class, 'cad_submission_id');
     }
+
+    public function tags()
+    {
+        return $this->hasMany(CadTag::class, 'cad_submission_id');
+    }
+
+    public function predictions()
+    {
+        return $this->hasMany(CadPrediction::class, 'cad_submission_id');
+    }
+
+    public function approvalPlan()
+    {
+        return $this->hasOne(CadApprovalPlan::class, 'cad_submission_id');
+    }
 }

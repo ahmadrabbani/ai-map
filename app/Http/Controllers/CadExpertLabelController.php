@@ -11,6 +11,8 @@ use App\Models\CadLabelMapping;
 use App\Models\CadRuleResult;
 use App\Models\CadSubmission;
 use App\Models\CadTrainingLabel;
+use App\Models\CadTag;
+use App\Models\CadPrediction;
 use App\Models\MapDrawing;
 use App\Models\MapEntity;
 use Illuminate\Support\Collection;
@@ -24,6 +26,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CadExpertLabelController extends Controller
@@ -302,9 +305,44 @@ class CadExpertLabelController extends Controller
         }
         $items = array_values($itemsByKey);
 
+        $reviewCatalog = [
+            ['plot_boundary', 'Plot boundary', 'Boundaries', '#2563eb'], ['building_footprint', 'Building footprint', 'Boundaries', '#0f766e'],
+            ['room', 'Room', 'Rooms', '#7c3aed'], ['bedroom', 'Bedroom', 'Rooms', '#8b5cf6'], ['kitchen', 'Kitchen', 'Rooms', '#ea580c'],
+            ['bathroom', 'Bathroom', 'Rooms', '#0891b2'], ['porch', 'Porch', 'Open spaces', '#65a30d'], ['terrace', 'Terrace', 'Open spaces', '#16a34a'],
+            ['front_setback', 'Front setback', 'Open spaces', '#f59e0b'], ['rear_setback', 'Rear setback', 'Open spaces', '#d97706'], ['side_setback', 'Side setback', 'Open spaces', '#b45309'],
+            ['road_edge', 'Road edge', 'Boundaries', '#475569'], ['road_centre_line', 'Road centre line', 'Boundaries', '#64748b'],
+            ['staircase', 'Staircase', 'Structural elements', '#be123c'], ['lift', 'Lift', 'Services', '#9f1239'], ['column', 'Column', 'Structural elements', '#334155'],
+            ['beam', 'Beam', 'Structural elements', '#1e293b'], ['slab', 'Slab', 'Structural elements', '#0f172a'],
+            ['door', 'Door', 'Openings', '#dc2626'], ['window', 'Window', 'Openings', '#0284c7'], ['ventilator', 'Ventilator', 'Openings', '#06b6d4'],
+            ['dimension', 'Dimension', 'Text and dimensions', '#9333ea'], ['floor_label', 'Floor label', 'Text and dimensions', '#c026d3'], ['north_arrow', 'North arrow', 'Text and dimensions', '#db2777'],
+            ['water_tank', 'Water tank', 'Services', '#0369a1'], ['mumty', 'Mumty', 'Services', '#4338ca'], ['title_block', 'Title block', 'Text and dimensions', '#6b7280'],
+            ['other', 'Other', 'Other', '#78716c'],
+        ];
+        $tagCounts = CadTag::where('cad_submission_id', $submission->id)->selectRaw('label_key, COUNT(*) as total')->groupBy('label_key')->pluck('total', 'label_key');
+        $predictionStats = CadPrediction::where('cad_submission_id', $submission->id)
+            ->whereIn('status', ['unreviewed', 'ai_suggested'])
+            ->selectRaw('label_key, COUNT(*) as total, AVG(confidence) as avg_confidence')
+            ->groupBy('label_key')->get()->keyBy('label_key');
+        foreach ($reviewCatalog as [$key, $name, $category, $colour]) {
+            if (! isset($itemsByKey[$key])) {
+                $items[] = ['label_key' => $key, 'label_name' => $name, 'required' => false, 'mapped_count' => 0, 'status' => 'optional', 'category' => $category];
+            }
+            $index = array_search($key, array_column($items, 'label_key'), true);
+            if ($index !== false) {
+                $items[$index]['colour'] = $colour;
+                $items[$index]['tagged_count'] = (int) ($tagCounts[$key] ?? 0);
+                $items[$index]['unverified_count'] = (int) optional($predictionStats->get($key))->total;
+                $items[$index]['average_confidence'] = optional($predictionStats->get($key))->avg_confidence !== null
+                    ? (float) $predictionStats->get($key)->avg_confidence : null;
+            }
+        }
+
         usort($items, function (array $a, array $b) {
             if ($a['required'] !== $b['required']) {
                 return $a['required'] ? -1 : 1;
+            }
+            if (($a['category'] ?? '') !== ($b['category'] ?? '')) {
+                return strcmp((string) ($a['category'] ?? ''), (string) ($b['category'] ?? ''));
             }
             return strcmp($a['label_key'], $b['label_key']);
         });
@@ -564,13 +602,17 @@ class CadExpertLabelController extends Controller
             ->orderBy('label_key')
             ->orderBy('id')
             ->get();
+        $rows->each(fn (CadExpertMarking $marking) => $marking->setAttribute(
+            'snapshot_url',
+            $marking->snapshot_path ? Storage::disk('public')->url($marking->snapshot_path) : null
+        ));
 
         return response()->json(['markings' => $rows]);
     }
 
     public function storeExpertMarking(Request $request, $id)
     {
-        $submission = CadSubmission::findOrFail($id);
+        $submission = CadSubmission::with('approvalPlan')->findOrFail($id);
         $layerDefinitions = $this->loadLayerDefinitions();
         $data = $request->validate([
             'label_key' => 'required|string|max:255',
@@ -579,14 +621,45 @@ class CadExpertLabelController extends Controller
             'points_json' => 'required|array|min:1',
             'measurement_json' => 'required|array',
             'status' => 'nullable|in:draft,confirmed',
+            'snapshot_data_url' => 'nullable|string|max:14000000',
+            'selected_handles_json' => 'nullable|array|max:1000',
+            'selected_handles_json.*' => 'string|max:255',
+            'facts_json' => 'nullable|array',
+            'facts_json.observation_type' => 'nullable|string|max:120',
+            'facts_json.count' => 'nullable|integer|min:0|max:100000',
+            'facts_json.measured_value' => 'nullable|numeric',
+            'facts_json.unit' => 'nullable|string|max:40',
+            'facts_json.expected_value' => 'nullable|string|max:255',
+            'facts_json.selected_layers' => 'nullable|array|max:100',
+            'facts_json.floor' => 'nullable|string|max:80',
+            'facts_json.map_drawing_id' => 'nullable|integer',
+            'facts_json.ai_text_evidence' => 'nullable|array',
+            'facts_json.ai_text_evidence.raw_text' => 'nullable|string|max:1000',
+            'facts_json.ai_text_evidence.cad_layer' => 'nullable|string|max:255',
+            'facts_json.ai_text_evidence.cad_handle' => 'nullable|string|max:255',
+            'facts_json.ai_text_evidence.x' => 'nullable|numeric',
+            'facts_json.ai_text_evidence.y' => 'nullable|numeric',
+            'facts_json.ai_text_evidence.parsed_value_ft' => 'nullable|numeric',
+            'facts_json.ai_text_evidence.semantic_hints' => 'nullable|array|max:20',
+            'facts_json.ai_text_evidence.semantic_hints.*' => 'string|max:120',
+            'facts_json.ai_text_evidence.officer_verified' => 'nullable|boolean',
+            'rule_code' => 'nullable|string|max:120',
+            'compliance_status' => 'nullable|in:compliant,non_compliant,needs_review,not_applicable',
+            'remarks' => 'nullable|string|max:4000',
         ]);
         $canonicalLabelKey = $this->canonicalLabelKey((string) $data['label_key'], $layerDefinitions);
         if (! $canonicalLabelKey) {
             return response()->json(['message' => 'Invalid label key for expert marking.'], 422);
         }
 
+        $snapshotPath = $this->storeExpertSnapshot($submission, $data['snapshot_data_url'] ?? null);
+        try {
         $marking = CadExpertMarking::create([
             'cad_submission_id' => $submission->id,
+            'cad_approval_application_id' => optional($submission->approvalPlan)->cad_approval_application_id,
+            'cad_approval_plan_id' => optional($submission->approvalPlan)->id,
+            'floor_type' => optional($submission->approvalPlan)->floor_type,
+            'marking_type' => $canonicalLabelKey,
             'label_key' => $canonicalLabelKey,
             'label_name' => $this->labelDisplayNameForKey($canonicalLabelKey, $layerDefinitions) ?? ($data['label_name'] ?? $canonicalLabelKey),
             'geometry_type' => $data['geometry_type'],
@@ -594,11 +667,39 @@ class CadExpertLabelController extends Controller
             'measurement_json' => $data['measurement_json'],
             'status' => $data['status'] ?? 'draft',
             'source' => 'expert_drawn',
+            'snapshot_path' => $snapshotPath,
+            'selected_handles_json' => $data['selected_handles_json'] ?? [],
+            'facts_json' => $data['facts_json'] ?? [],
+            'rule_code' => $data['rule_code'] ?? null,
+            'compliance_status' => $data['compliance_status'] ?? null,
+            'remarks' => $data['remarks'] ?? null,
             'created_by' => optional($request->user())->email ?? optional($request->user())->name,
             'updated_by' => optional($request->user())->email ?? optional($request->user())->name,
         ]);
+        } catch (\Throwable $exception) {
+            if ($snapshotPath) Storage::disk('public')->delete($snapshotPath);
+            throw $exception;
+        }
+        $this->dxfPatternTrainingService->captureExpertMarking($submission, $marking);
 
-        return response()->json(['message' => 'Expert marking saved.', 'marking' => $marking]);
+        $marking->setAttribute('snapshot_url', $snapshotPath ? Storage::disk('public')->url($snapshotPath) : null);
+        return response()->json(['message' => 'Learning example saved.', 'marking' => $marking]);
+    }
+
+    private function storeExpertSnapshot(CadSubmission $submission, ?string $dataUrl): ?string
+    {
+        if (! $dataUrl) return null;
+        if (! preg_match('/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+\/=\r\n]+)$/', $dataUrl, $matches)) {
+            abort(422, 'The selected-region snapshot is not a supported image.');
+        }
+        $binary = base64_decode($matches[2], true);
+        if ($binary === false || strlen($binary) > 10 * 1024 * 1024) {
+            abort(422, 'The selected-region snapshot is invalid or larger than 10 MB.');
+        }
+        $extension = $matches[1] === 'jpeg' ? 'jpg' : $matches[1];
+        $path = 'cad-learning-examples/'.$submission->id.'/'.now()->format('YmdHis').'-'.Str::random(10).'.'.$extension;
+        Storage::disk('public')->put($path, $binary);
+        return $path;
     }
 
     public function updateExpertMarking(Request $request, $id, $markingId)
@@ -632,6 +733,7 @@ class CadExpertLabelController extends Controller
         }
         $marking->updated_by = optional($request->user())->email ?? optional($request->user())->name;
         $marking->save();
+        $this->dxfPatternTrainingService->captureExpertMarking($submission, $marking);
 
         return response()->json(['message' => 'Expert marking updated.', 'marking' => $marking]);
     }
@@ -640,6 +742,10 @@ class CadExpertLabelController extends Controller
     {
         $submission = CadSubmission::findOrFail($id);
         $marking = CadExpertMarking::where('cad_submission_id', $submission->id)->findOrFail($markingId);
+        $this->dxfPatternTrainingService->removeExpertMarking($submission, $marking);
+        if ($marking->snapshot_path) {
+            Storage::disk('public')->delete($marking->snapshot_path);
+        }
         $marking->delete();
 
         return response()->json(['message' => 'Expert marking deleted.']);
@@ -652,6 +758,7 @@ class CadExpertLabelController extends Controller
         $marking->status = 'confirmed';
         $marking->updated_by = optional($request->user())->email ?? optional($request->user())->name;
         $marking->save();
+        $this->dxfPatternTrainingService->captureExpertMarking($submission, $marking);
 
         return response()->json(['message' => 'Expert marking confirmed.', 'marking' => $marking]);
     }
@@ -693,6 +800,13 @@ class CadExpertLabelController extends Controller
                 'status' => $row->status,
                 'label_key' => $k,
                 'label_name' => $row->label_name ?: $k,
+                'snapshot_path' => $row->snapshot_path,
+                'snapshot_url' => $row->snapshot_path ? Storage::disk('public')->url($row->snapshot_path) : null,
+                'selected_handles' => $row->selected_handles_json ?: [],
+                'facts' => $row->facts_json ?: [],
+                'rule_code' => $row->rule_code,
+                'compliance_status' => $row->compliance_status,
+                'officer_notes' => $row->remarks,
                 'measurement' => [
                     'area' => (float) ($m['area'] ?? 0),
                     'perimeter' => (float) ($m['perimeter'] ?? 0),

@@ -92,7 +92,7 @@ const DENSE_DISTANCE_PERCENTILE = 0.85;
 const MAX_DENSE_SAMPLE_POINTS = 12000;
 const FIT_ZOOM = 6;
 const MAX_TEXT_ITEMS = 250;
-const MAX_TEXT_OVERLAY_ITEMS = 220;
+const MAX_TEXT_OVERLAY_ITEMS = 120;
 const FLOOR_OFFICIAL_SUGGESTIONS = {
   ground_floor: [
     { tag: "plot_boundary", label: "Plot boundary" },
@@ -789,6 +789,12 @@ function semanticHintsFromText(text) {
   if (/(rear).*(setback|passage|building line)|\brbl\b/.test(low)) add("rear_building_line");
   if (/(side).*(setback|passage|building line)|\bsbl\b/.test(low)) add("side_building_line");
   if (/(porch|car porch|ramp)/.test(low)) add("porch");
+  if (/(stair|stairs|staircase|\bup\b|\bdn\b)/.test(low)) add("stairs");
+  if (/(bed\s*room|bedroom)/.test(low)) add("room");
+  if (/(kitchen)/.test(low)) add("kitchen");
+  if (/(bath|toilet|washroom|w\.c)/.test(low)) add("bathroom");
+  if (/(plot\s*(area|size|no)|site\s*area)/.test(low)) add("plot_boundary");
+  if (/(ground floor|first floor|second floor|basement|roof plan)/.test(low)) add("floor_label");
   if (/(passage|corridor)/.test(low) && !hints.length) add("setback_reference");
   if (/(dimension|dim|wide|width|long|length|size)/.test(low)) add("dimensions");
   return hints;
@@ -807,6 +813,9 @@ function extractCadTextMeasurements(rows) {
       text,
       value_ft: Number.isFinite(valueFt) ? Number(valueFt.toFixed(3)) : null,
       semantic_hints: hints,
+      x: Number.isFinite(row?.x) ? Number(row.x) : null,
+      y: Number.isFinite(row?.y) ? Number(row.y) : null,
+      handle: row?.handle || null,
     });
   }
   return out;
@@ -867,6 +876,7 @@ function App() {
   const entitySummary = config.entitySummary || {};
   const rulesetOverview = config.rulesetOverview || {};
   const rulesMetadata = config.rulesMetadata || {};
+  const cadTextReport = config.cadTextReport || {};
   const floorContext = config.floorContext || "ground_floor";
   const canvasRef = useRef(null);
   const layerInfoPopupRef = useRef(null);
@@ -980,6 +990,27 @@ function App() {
   const [pickCandidates, setPickCandidates] = useState(null);
   const [applyingQuickMark, setApplyingQuickMark] = useState(false);
   const [quickMarkFeedback, setQuickMarkFeedback] = useState(null);
+  const [taggingWorkspace, setTaggingWorkspace] = useState({ predictions: [], tags: [], rules: [], progress: { reviewed: 0, total: 0, percent: 0 } });
+  const [selectedPredictionId, setSelectedPredictionId] = useState(null);
+  const [predictionStatusFilter, setPredictionStatusFilter] = useState("unreviewed");
+  const [predictionConfidence, setPredictionConfidence] = useState(0.75);
+  const [predictionBusy, setPredictionBusy] = useState(false);
+  const [correctedPredictionLabel, setCorrectedPredictionLabel] = useState("");
+  const [predictionRemarks, setPredictionRemarks] = useState("");
+  const [evaluationSummary, setEvaluationSummary] = useState(null);
+  const [showAdvancedReviewTools, setShowAdvancedReviewTools] = useState(false);
+  const [learningLabel, setLearningLabel] = useState("stairs");
+  const [learningCount, setLearningCount] = useState("");
+  const [learningMeasuredValue, setLearningMeasuredValue] = useState("");
+  const [learningUnit, setLearningUnit] = useState("count");
+  const [learningExpectedValue, setLearningExpectedValue] = useState("");
+  const [learningRuleCode, setLearningRuleCode] = useState("");
+  const [learningCompliance, setLearningCompliance] = useState("needs_review");
+  const [learningNotes, setLearningNotes] = useState("");
+  const [learningSnapshot, setLearningSnapshot] = useState("");
+  const [learningSourceText, setLearningSourceText] = useState(null);
+  const [learningRegionPoints, setLearningRegionPoints] = useState([]);
+  const [savingLearningExample, setSavingLearningExample] = useState(false);
 
   useEffect(() => {
     layerMetaRef.current = layerMeta;
@@ -1087,6 +1118,12 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (event) => {
+      const editable = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !editable) {
+        event.preventDefault();
+        if (!event.shiftKey) undoLastPoint();
+        return;
+      }
       if (event.key === "Escape") {
         if (pickCandidates) {
           setPickCandidates(null);
@@ -1095,6 +1132,9 @@ function App() {
         if (selectedLayer && drawingMode === "select") {
           clearLayerSelection();
         }
+        setSelectedEntityHandles([]);
+        setSelectedEntityHandle("");
+        setSelectedPredictionId(null);
         return;
       }
       if (event.key === "Enter" && drawingMode !== "select") {
@@ -1155,6 +1195,7 @@ function App() {
       loadMappingReport(),
       loadExpertMarkings(),
       loadExpertMarkingReport(),
+      loadTaggingWorkspace(),
     ]);
     if (config.autoMapOnLoad && !autoMapBootstrappedRef.current) {
       autoMapBootstrappedRef.current = true;
@@ -1162,6 +1203,119 @@ function App() {
       await Promise.allSettled([loadMappingReport(), loadExpertMarkingReport(), loadLabelsCatalog()]);
     }
     loadDxf();
+  }
+
+  async function loadTaggingWorkspace() {
+    if (!config.taggingWorkspaceUrl) return;
+    try {
+      const response = await fetch(config.taggingWorkspaceUrl, { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error(`Tagging workspace failed (${response.status})`);
+      const payload = await response.json();
+      setTaggingWorkspace(payload);
+      setSelectedPredictionId((current) => current || payload.predictions?.find((row) => ["unreviewed", "ai_suggested"].includes(row.status))?.id || payload.predictions?.[0]?.id || null);
+    } catch (error) {
+      setStatusMessage(error.message || "Could not load the AI review queue.");
+    }
+  }
+
+  async function reviewPrediction(action, prediction = selectedPrediction) {
+    if (!prediction || predictionBusy) return;
+    if (action === "correct" && !correctedPredictionLabel) {
+      setStatusMessage("Choose the corrected label first.");
+      return;
+    }
+    setPredictionBusy(true);
+    try {
+      const url = config.predictionReviewUrlTemplate.replace("__PREDICTION_ID__", prediction.id);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-TOKEN": config.csrfToken },
+        body: JSON.stringify({
+          action,
+          label_key: action === "correct" ? correctedPredictionLabel : undefined,
+          unit: scaleLabel.includes("inch") ? "IN" : "FT",
+          scale: scaleMultiplier,
+          unit_confirmed: scaleTouched || !!autoScaleFromPlotBoundary,
+          remarks: predictionRemarks || undefined,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || `Review failed (${response.status})`);
+      await loadTaggingWorkspace();
+      setPredictionRemarks("");
+      setCorrectedPredictionLabel("");
+      const next = taggingWorkspace.predictions.find((row) => row.id !== prediction.id && ["unreviewed", "ai_suggested"].includes(row.status));
+      setSelectedPredictionId(next?.id || null);
+      if (next?.cad_handle) {
+        const entity = cadEntitiesRef.current.find((row) => row.handle === next.cad_handle);
+        if (entity) zoomToEntity(entity);
+      }
+      setStatusMessage(`${action === "confirm" ? "Confirmed" : action === "correct" ? "Corrected" : action === "reject" ? "Rejected" : "Marked uncertain"} prediction #${prediction.id}.`);
+    } catch (error) {
+      setStatusMessage(error.message || "Prediction review failed.");
+    } finally {
+      setPredictionBusy(false);
+    }
+  }
+
+  async function bulkConfirmPredictions() {
+    if (!config.predictionBulkReviewUrl || predictionBusy) return;
+    setPredictionBusy(true);
+    try {
+      const response = await fetch(config.predictionBulkReviewUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-TOKEN": config.csrfToken },
+        body: JSON.stringify({ action: "confirm", confidence_threshold: Number(predictionConfidence), unit_confirmed: false }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || `Bulk review failed (${response.status})`);
+      await loadTaggingWorkspace();
+      setStatusMessage(`Confirmed ${payload.reviewed || 0} high-confidence predictions. Measurements remain provisional until unit/scale is confirmed.`);
+    } catch (error) {
+      setStatusMessage(error.message || "Bulk review failed.");
+    } finally {
+      setPredictionBusy(false);
+    }
+  }
+
+  async function submitVerifiedTrainingData() {
+    if (!config.submitVerifiedTagsUrl || predictionBusy) return;
+    setPredictionBusy(true);
+    try {
+      const response = await fetch(config.submitVerifiedTagsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-TOKEN": config.csrfToken },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || `Verification failed (${response.status})`);
+      await loadTaggingWorkspace();
+      setStatusMessage(`Submitted ${payload.verified || 0} tags as expert-verified training data.`);
+    } catch (error) {
+      setStatusMessage(error.message || "Training-data submission failed.");
+    } finally {
+      setPredictionBusy(false);
+    }
+  }
+
+  async function runTagEvaluation() {
+    if (!config.evaluateTagsUrl || predictionBusy) return;
+    setPredictionBusy(true);
+    try {
+      const response = await fetch(config.evaluateTagsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-TOKEN": config.csrfToken },
+        body: JSON.stringify({ iou_threshold: 0.75, dataset_split: "review" }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || `Evaluation failed (${response.status})`);
+      setEvaluationSummary(payload.run?.summary || null);
+      setStatusMessage("Evaluation completed against expert-verified tags.");
+    } catch (error) {
+      setStatusMessage(error.message || "Evaluation failed.");
+    } finally {
+      setPredictionBusy(false);
+    }
   }
 
   async function loadExpertMarkings() {
@@ -1269,34 +1423,49 @@ function App() {
     statsRef.current = { entities: 0, lines: 0, polylines: 0 };
   }
 
-function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
+function makeTextSprite(text, color = "#315b86") {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  const fontSize = 14;
-  const padding = 4;
-  ctx.font = `${fontSize}px Manrope, sans-serif`;
-  const width = Math.min(560, Math.max(36, Math.ceil(ctx.measureText(text).width) + (padding * 2)));
+  const fontSize = 12;
+  const padding = 3;
+  const readableText = String(text || "").trim().replace(/\s+/g, " ");
+  const displayText = readableText.length > 42 ? `${readableText.slice(0, 39)}…` : readableText;
+  ctx.font = `500 ${fontSize}px Manrope, sans-serif`;
+  const width = Math.min(320, Math.max(30, Math.ceil(ctx.measureText(displayText).width) + (padding * 2)));
   const height = fontSize + (padding * 2);
     canvas.width = width;
     canvas.height = height;
     ctx.clearRect(0, 0, width, height);
-    ctx.font = `${fontSize}px Manrope, sans-serif`;
-  ctx.fillStyle = "rgba(255,255,255,0.82)";
+    ctx.font = `500 ${fontSize}px Manrope, sans-serif`;
+  ctx.fillStyle = "rgba(255,255,255,0.68)";
   ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = "rgba(16,20,24,0.08)";
+  ctx.strokeStyle = "rgba(49,91,134,0.12)";
   ctx.strokeRect(0, 0, width, height);
     ctx.fillStyle = color;
     ctx.textBaseline = "middle";
-    ctx.fillText(text, padding, height / 2);
+    ctx.fillText(displayText, padding, height / 2);
     const texture = new THREE.CanvasTexture(canvas);
     texture.minFilter = THREE.LinearFilter;
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false });
     const sprite = new THREE.Sprite(material);
-  const scaleBase = Math.max(4, Math.min(80, worldScale));
-  sprite.scale.set((width / height) * scaleBase, scaleBase, 1);
+  sprite.userData.textAspect = width / height;
+  sprite.scale.set((width / height) * 4, 4, 1);
   return sprite;
 }
+
+  function resizeCadTextOverlays() {
+    const camera = cameraRef.current;
+    const viewportHeight = lastSizeRef.current.h || 600;
+    if (!camera || viewportHeight <= 0) return;
+    const visibleWorldHeight = Math.abs(camera.top - camera.bottom) / Math.max(camera.zoom || 1, 0.0001);
+    const worldPerPixel = visibleWorldHeight / viewportHeight;
+    const textHeight = worldPerPixel * 15;
+    for (const sprite of textOverlayObjectsRef.current) {
+      const aspect = Number(sprite.userData?.textAspect) || 2;
+      sprite.scale.set(aspect * textHeight, textHeight, 1);
+    }
+  }
 
   function renderCadTextOverlays(rows) {
     const scene = sceneRef.current;
@@ -1321,9 +1490,9 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     }
     const limit = MAX_TEXT_OVERLAY_ITEMS;
     const fitInfo = fitInfoRef.current || {};
-    const fullSpan = Number.isFinite(fitInfo.fullSpan) ? fitInfo.fullSpan : null;
-    const dynamicScale = fullSpan ? Math.max(4, Math.min(48, fullSpan * 0.0085)) : 8;
-    const cell = Math.max(8, dynamicScale * 1.6);
+    const referenceSpan = [fitInfo.denseSpan, fitInfo.trimmedSpan, fitInfo.dominantSpan, fitInfo.fullSpan]
+      .find((span) => Number.isFinite(span) && span > 0) || 1000;
+    const cell = Math.max(12, Math.min(80, referenceSpan / 35));
     const occupied = new Set();
     const dedupe = new Set();
     const weightedRows = (rows || [])
@@ -1341,7 +1510,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       const gy = Math.floor(Number(item.y) / cell);
       const bucket = `${gx}:${gy}`;
       if (occupied.has(bucket)) continue;
-      const sprite = makeTextSprite(item.text, "#0b3d91", dynamicScale);
+      const sprite = makeTextSprite(item.text);
       if (!sprite) continue;
       sprite.position.set(Number(item.x), Number(item.y), 5);
       sprite.visible = true;
@@ -1351,6 +1520,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       dedupe.add(normText);
       count += 1;
     }
+    resizeCadTextOverlays();
     render();
   }
 
@@ -1488,6 +1658,43 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     render();
   }
 
+  function useAiTextFinding(finding) {
+    if (!finding) return;
+    const matchedEntity = cadEntitiesRef.current.find((entity) =>
+      (finding.handle && entity.handle === finding.handle)
+      || (entity.text_content && normalizeDxfText(entity.text_content) === normalizeDxfText(finding.text))
+    );
+    if (matchedEntity) {
+      selectEntityCandidate(candidateFromHandle(matchedEntity.handle, "ai-text-report", 0));
+      zoomToEntity(matchedEntity);
+    } else if (Number.isFinite(finding.x) && Number.isFinite(finding.y)) {
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      if (camera && controls) {
+        const visibleHeight = Math.max(80, Math.abs(camera.top - camera.bottom) / Math.max(camera.zoom || 1, 0.0001));
+        const aspect = lastSizeRef.current.h ? lastSizeRef.current.w / lastSizeRef.current.h : 1;
+        camera.left = -(visibleHeight * aspect) / 2; camera.right = (visibleHeight * aspect) / 2;
+        camera.top = visibleHeight / 2; camera.bottom = -visibleHeight / 2;
+        camera.position.set(finding.x, finding.y, camera.position.z);
+        camera.updateProjectionMatrix();
+        controls.target.set(finding.x, finding.y, 0); controls.update(); render();
+      }
+    }
+    const suggestedLabel = finding.semantic_hints?.[0];
+    if (suggestedLabel) {
+      const supported = tagOptions.some((option) => option.value === suggestedLabel);
+      const fallback = suggestedLabel === "room" && tagOptions.some((option) => option.value === "text") ? "text" : learningLabel;
+      setLearningLabel(supported ? suggestedLabel : fallback);
+    }
+    if (finding.value_ft != null) {
+      setLearningMeasuredValue(String(finding.value_ft));
+      setLearningUnit("ft");
+    }
+    setLearningSourceText(finding);
+    setLearningNotes(`AI read from CAD text: "${finding.text}". Officer verification: `);
+    setStatusMessage("AI text finding selected. Verify it on the drawing, capture the region, and complete the officer note.");
+  }
+
   function resetView() {
     applyViewMode(floorContext ? "floor" : "approval");
     requestAnimationFrame(() => fitView());
@@ -1507,7 +1714,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     const canvas = canvasRef.current;
     if (!canvas) return () => {};
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     rendererRef.current = renderer;
 
@@ -1554,7 +1761,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     };
 
     const beginShiftPan = (event) => {
-      if (!event.shiftKey || event.button !== 0 || drawingModeRef.current !== "select" || measureModeRef.current) {
+      if (event.button !== 1 || drawingModeRef.current !== "select" || measureModeRef.current) {
         return false;
       }
       shiftPanRef.current = {
@@ -1691,7 +1898,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
           return;
         }
         if (cadCandidates.length) {
-          selectEntityCandidate(cadCandidates[0], { additive: event.ctrlKey || event.metaKey });
+          selectEntityCandidate(cadCandidates[0], { additive: event.shiftKey || event.ctrlKey || event.metaKey });
           return;
         }
         const markingHit = resolvedHits.find(({ meta }) => meta.expertMarkingId);
@@ -1709,7 +1916,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
         const pickedHandle = meta.handle || "";
         const layer = meta.layer || "";
         if (pickedHandle) {
-          selectEntityCandidate(candidateFromHandle(pickedHandle, "raycast", 0), { additive: event.ctrlKey || event.metaKey });
+          selectEntityCandidate(candidateFromHandle(pickedHandle, "raycast", 0), { additive: event.shiftKey || event.ctrlKey || event.metaKey });
         }
         if (layer) {
           selectLayer(layer);
@@ -1725,7 +1932,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
           return;
         }
         if (geometryCandidates.length) {
-          selectEntityCandidate(geometryCandidates[0], { additive: event.ctrlKey || event.metaKey });
+          selectEntityCandidate(geometryCandidates[0], { additive: event.shiftKey || event.ctrlKey || event.metaKey });
           return;
         }
         setPickCandidates(null);
@@ -1763,6 +1970,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
         finishCurrentShape();
       }
     };
+    const onContextMenu = (event) => event.preventDefault();
 
     window.addEventListener("resize", scheduleResize);
     canvas.addEventListener("pointerdown", onPointerDown);
@@ -1770,6 +1978,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     canvas.addEventListener("pointerup", onPointerUp);
     canvas.addEventListener("pointercancel", onPointerUp);
     canvas.addEventListener("dblclick", onDblClick);
+    canvas.addEventListener("contextmenu", onContextMenu);
     if (canvas.parentElement && typeof ResizeObserver !== "undefined") {
       const observer = new ResizeObserver(() => scheduleResize());
       observer.observe(canvas.parentElement);
@@ -1784,6 +1993,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
       canvas.removeEventListener("dblclick", onDblClick);
+      canvas.removeEventListener("contextmenu", onContextMenu);
       if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
       resizeRafRef.current = 0;
       resizeObserverRef.current?.disconnect();
@@ -1894,6 +2104,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     const scene = sceneRef.current;
     const camera = cameraRef.current;
     if (renderer && scene && camera) {
+      resizeCadTextOverlays();
       renderer.render(scene, camera);
     }
   }
@@ -2494,6 +2705,136 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
       await Promise.all([loadExpertMarkings(), loadExpertMarkingReport()]);
     } catch {
       setStatusMessage("Failed to save expert marking.");
+    }
+  }
+
+  function selectedLearningBounds() {
+    const boundsList = selectedCadEntities.map(entityBounds).filter(Boolean);
+    if (boundsList.length) {
+      return boundsList.reduce((all, bounds) => ({
+        minX: Math.min(all.minX, bounds.minX), minY: Math.min(all.minY, bounds.minY),
+        maxX: Math.max(all.maxX, bounds.maxX), maxY: Math.max(all.maxY, bounds.maxY),
+      }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+    }
+    if (currentPoints.length) {
+      return currentPoints.reduce((all, point) => ({
+        minX: Math.min(all.minX, point.x), minY: Math.min(all.minY, point.y),
+        maxX: Math.max(all.maxX, point.x), maxY: Math.max(all.maxY, point.y),
+      }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+    }
+    return null;
+  }
+
+  function captureLearningRegion() {
+    const canvas = canvasRef.current;
+    const camera = cameraRef.current;
+    const bounds = selectedLearningBounds();
+    if (!canvas || !camera || !bounds) {
+      setStatusMessage("Select one or more CAD entities, or draw a rectangle around the region first.");
+      return;
+    }
+    render();
+    camera.updateMatrixWorld();
+    const rect = canvas.getBoundingClientRect();
+    const corners = [
+      new THREE.Vector3(bounds.minX, bounds.minY, 0), new THREE.Vector3(bounds.maxX, bounds.minY, 0),
+      new THREE.Vector3(bounds.maxX, bounds.maxY, 0), new THREE.Vector3(bounds.minX, bounds.maxY, 0),
+    ].map((point) => {
+      point.project(camera);
+      return { x: ((point.x + 1) / 2) * rect.width, y: ((1 - point.y) / 2) * rect.height };
+    });
+    const margin = 28;
+    const left = Math.max(0, Math.min(...corners.map((point) => point.x)) - margin);
+    const top = Math.max(0, Math.min(...corners.map((point) => point.y)) - margin);
+    const right = Math.min(rect.width, Math.max(...corners.map((point) => point.x)) + margin);
+    const bottom = Math.min(rect.height, Math.max(...corners.map((point) => point.y)) + margin);
+    if (right - left < 4 || bottom - top < 4) {
+      setStatusMessage("The selected region is too small to capture. Zoom closer or select a larger region.");
+      return;
+    }
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const crop = document.createElement("canvas");
+    crop.width = Math.max(1, Math.round((right - left) * scaleX));
+    crop.height = Math.max(1, Math.round((bottom - top) * scaleY));
+    crop.getContext("2d").drawImage(
+      canvas, left * scaleX, top * scaleY, crop.width, crop.height,
+      0, 0, crop.width, crop.height
+    );
+    setLearningSnapshot(crop.toDataURL("image/png"));
+    setLearningRegionPoints([
+      { x: bounds.minX, y: bounds.minY }, { x: bounds.maxX, y: bounds.minY },
+      { x: bounds.maxX, y: bounds.maxY }, { x: bounds.minX, y: bounds.maxY },
+    ]);
+    if (!learningMeasuredValue && Number(selectedMeasurementSummary.length) > 0) {
+      setLearningMeasuredValue(Number(selectedMeasurementSummary.length).toFixed(2));
+    }
+    setStatusMessage("Selected CAD region captured as a PNG preview. Add the observation and save it.");
+  }
+
+  async function saveLearningExample() {
+    if (!config.expertMarkingsStoreUrl || savingLearningExample) return;
+    if (!learningSnapshot || !learningRegionPoints.length) {
+      setStatusMessage("Capture the selected CAD region before saving the learning example.");
+      return;
+    }
+    if (!learningLabel || !learningNotes.trim()) {
+      setStatusMessage("Choose what the region represents and add an officer note.");
+      return;
+    }
+    setSavingLearningExample(true);
+    const selectedLayersForExample = [...new Set(selectedCadEntities.map((entity) => entity.layer_name).filter(Boolean))];
+    const measurement = measurementForDrawing("rectangle", learningRegionPoints);
+    try {
+      const response = await fetch(config.expertMarkingsStoreUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-TOKEN": config.csrfToken },
+        body: JSON.stringify({
+          label_key: learningLabel,
+          label_name: resolveTagLabel(learningLabel, tagOptions),
+          geometry_type: "rectangle",
+          points_json: learningRegionPoints,
+          measurement_json: measurement,
+          status: "confirmed",
+          snapshot_data_url: learningSnapshot,
+          selected_handles_json: selectedEntityHandles,
+          facts_json: {
+            observation_type: learningLabel,
+            count: learningCount === "" ? null : Number(learningCount),
+            measured_value: learningMeasuredValue === "" ? null : Number(learningMeasuredValue),
+            unit: learningUnit || null,
+            expected_value: learningExpectedValue || null,
+            selected_layers: selectedLayersForExample,
+            floor: floorContext,
+            map_drawing_id: config.mapDrawingId || null,
+            ai_text_evidence: learningSourceText ? {
+              raw_text: learningSourceText.text,
+              cad_layer: learningSourceText.layer,
+              cad_handle: learningSourceText.handle,
+              x: learningSourceText.x,
+              y: learningSourceText.y,
+              parsed_value_ft: learningSourceText.value_ft,
+              semantic_hints: learningSourceText.semantic_hints || [],
+              officer_verified: true,
+            } : null,
+          },
+          rule_code: learningRuleCode || null,
+          compliance_status: learningCompliance,
+          remarks: learningNotes.trim(),
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || `Save failed (${response.status})`);
+      await Promise.all([loadExpertMarkings(), loadExpertMarkingReport()]);
+      setLearningSnapshot(""); setLearningRegionPoints([]); setLearningCount("");
+      setLearningMeasuredValue(""); setLearningExpectedValue(""); setLearningRuleCode("");
+      setLearningCompliance("needs_review"); setLearningNotes("");
+      setLearningSourceText(null);
+      setStatusMessage("Learning example saved with its PNG region, structured facts, rule status, and officer note.");
+    } catch (error) {
+      setStatusMessage(error.message || "Could not save the learning example.");
+    } finally {
+      setSavingLearningExample(false);
     }
   }
 
@@ -3366,6 +3707,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
             const tpos = pos ? transformPoints([pos], transforms)[0] : null;
             textEntitiesRef.current.push({
               layer,
+              handle: ent.handle || null,
               text: raw,
               x: tpos ? tpos.x : null,
               y: tpos ? tpos.y : null,
@@ -4232,8 +4574,21 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
     }
   }
 
+  const selectedPrediction = taggingWorkspace.predictions.find((row) => Number(row.id) === Number(selectedPredictionId)) || null;
+  const visiblePredictions = taggingWorkspace.predictions.filter((row) => {
+    if (predictionStatusFilter === "all") return true;
+    if (predictionStatusFilter === "unreviewed") return ["unreviewed", "ai_suggested"].includes(row.status);
+    return row.status === predictionStatusFilter;
+  });
+  const aiTextMetricRows = Object.entries(cadTextReport.metrics || {})
+    .filter(([, value]) => value !== null && value !== "" && (typeof value === "number" || typeof value === "string"))
+    .slice(0, 14);
+  const aiTextFindings = cadTextMeasurements
+    .filter((row) => row.value_ft != null || row.semantic_hints.length)
+    .slice(0, 30);
+
   return (
-    <div className="layout">
+    <div className={`layout${showAdvancedReviewTools ? "" : " officer-simple-layout"}`}>
       <div className="sidebar" style={{ width: "25%", minWidth: 320 }}>
         <div className="card" style={{ border: "1px solid #dfe7ef", borderRadius: 12, padding: 10, marginBottom: 10, background: "#f8fbff", position: "sticky", top: 8, zIndex: 2 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
@@ -4301,8 +4656,11 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
                 cursor: "pointer",
               }}
             >
-              <div style={{ fontWeight: 600 }}>{item.label_name}</div>
-              <div className="muted">{item.label_key}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 600 }}>
+                <span style={{ width: 10, height: 10, borderRadius: "50%", background: item.colour || "#64748b", flex: "0 0 auto" }} />
+                {item.label_name}
+              </div>
+              <div className="muted">{item.category || "Other"} · {item.label_key}</div>
               <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
                 <span className="pill" style={{ background: item.required ? "rgba(178,28,28,0.1)" : "rgba(15,107,95,0.12)", color: item.required ? "#b21c1c" : "#0f6b5f" }}>
                   {item.required ? "Required" : "Optional"}
@@ -4310,6 +4668,7 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
                 <span className="muted">
                   {status === "confirmed" ? "Confirmed" : status === "draft" ? "Draft" : "Not marked"}
                 </span>
+                <span className="muted">Tags {item.tagged_count || 0} · AI {item.unverified_count || 0}{item.average_confidence != null ? ` · ${Math.round(Number(item.average_confidence) * 100)}%` : ""}</span>
               </div>
               {expertRow ? (
                 <div className="muted" style={{ marginTop: 4 }}>
@@ -4400,8 +4759,8 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
                     entityType: entity.entity_type,
                     source: "panel",
                     score: 0,
-                  }, { additive: event.ctrlKey || event.metaKey });
-                  if (entity.layer_name) selectLayer(entity.layer_name, { additive: event.ctrlKey || event.metaKey });
+                  }, { additive: event.shiftKey || event.ctrlKey || event.metaKey });
+                  if (entity.layer_name) selectLayer(entity.layer_name, { additive: event.shiftKey || event.ctrlKey || event.metaKey });
                 }}
                 onDoubleClick={() => zoomToEntity(entity)}
                 style={{
@@ -5196,6 +5555,22 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
           <span className="pill">DXF: {config.hasDxf ? "available" : "missing"}</span>
           {config.activeLayerConfig ? <span className="pill">Layer config: {config.activeLayerConfig}</span> : null}
           {floorContext ? <span className="pill">{humanFloorContext(floorContext)}</span> : null}
+          {!showAdvancedReviewTools ? (
+            <>
+              <strong style={{ color: "#0f6b5f" }}>Click a CAD item; Shift+click adds more</strong>
+              <button type="button" onClick={() => { setDrawingMode(drawingMode === "rectangle" ? "select" : "rectangle"); clearCurrentDrawing(); }} style={{ fontWeight: drawingMode === "rectangle" ? 800 : 500 }}>
+                {drawingMode === "rectangle" ? "Drawing region…" : "Draw region"}
+              </button>
+              <button type="button" onClick={() => { setSelectedEntityHandles([]); setSelectedEntityHandle(""); }}>Clear selection</button>
+              <button type="button" onClick={() => setShowCadText((value) => !value)} style={{ fontWeight: showCadText ? 700 : 500 }}>
+                {showCadText ? "Hide text" : "Show text"}
+              </button>
+              <button type="button" onClick={fitView}>Fit drawing</button>
+              <button type="button" onClick={toggleFullscreenViewer}>Fullscreen</button>
+              <span className="muted" style={{ marginLeft: "auto" }}>{selectedEntityHandles.length} selected</span>
+            </>
+          ) : (
+          <>
           <span className="muted">Drawing mode:</span>
           <select value={drawingMode} onChange={(e) => { setDrawingMode(e.target.value); clearCurrentDrawing(); }}>
             <option value="select">Select</option>
@@ -5224,6 +5599,8 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
           <button type="button" onClick={toggleFullscreenViewer}>Fullscreen</button>
           <span className="pill">CAD text: {showCadText ? `ON (${Math.min(textEntities.length, 1200)})` : "OFF"}</span>
           <span className="muted" style={{ marginLeft: "auto" }}>{hoverText}</span>
+          </>
+          )}
         </div>
         <div
           className="canvas-wrap"
@@ -5391,7 +5768,176 @@ function makeTextSprite(text, color = "#0b3d91", worldScale = 12) {
         ) : null}
         <div className="muted" style={{ position: "absolute", bottom: 8, right: 12 }}>{summaryText}</div>
         </div>
-        <div className="cad-details-panel">
+        <div className={`cad-details-panel${showAdvancedReviewTools ? "" : " officer-simple"}`}>
+          <div className="officer-workflow">
+            <div className="card" style={{ border: "2px solid #0f6b5f", borderRadius: 12, padding: 14, marginBottom: 10, background: "#f7fffc" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div><div style={{ fontWeight: 800, fontSize: 18 }}>Add a CAD learning example</div><div className="muted">Select → capture PNG → describe → save.</div></div>
+                <button type="button" onClick={() => setShowAdvancedReviewTools((value) => !value)}>{showAdvancedReviewTools ? "Simple view" : "Advanced tools"}</button>
+              </div>
+              <ol style={{ margin: "12px 0", paddingLeft: 20, fontSize: 13 }}>
+                <li>Select one or more CAD entities on the drawing using click or Shift+click.</li>
+                <li>Choose what the region represents and capture it.</li>
+                <li>Add the observed fact, rule result, and officer note.</li>
+              </ol>
+              <div style={{ padding: 9, borderRadius: 8, background: selectedEntityHandles.length ? "#e9f8f1" : "#fff8df", marginBottom: 10 }}>
+                <strong>{selectedEntityHandles.length} CAD {selectedEntityHandles.length === 1 ? "entity" : "entities"} selected</strong>
+                <div className="muted">{selectedEntityHandles.length ? selectedEntityHandles.slice(0, 8).join(", ") : "Click an entity on the drawing. Hold Shift to add more."}</div>
+              </div>
+              <label className="muted">This region is</label>
+              <select value={learningLabel} onChange={(event) => { setLearningLabel(event.target.value); selectActiveLabel(event.target.value); }} style={{ width: "100%", marginTop: 4, marginBottom: 8 }}>
+                {tagOptions.filter((item) => item.value).map((item) => <option key={`learning-${item.value}`} value={item.value}>{item.label}</option>)}
+              </select>
+              <button type="button" onClick={captureLearningRegion} disabled={!selectedEntityHandles.length && !currentPoints.length} style={{ width: "100%", fontWeight: 700 }}>
+                Capture selected region as PNG
+              </button>
+              {learningSnapshot ? <img className="learning-snapshot" src={learningSnapshot} alt="Selected CAD learning region" style={{ marginTop: 9 }} /> : null}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10 }}>
+                <div><label className="muted">Observed count</label><input type="number" min="0" value={learningCount} onChange={(event) => setLearningCount(event.target.value)} placeholder="e.g. 20" style={{ width: "100%" }} /></div>
+                <div><label className="muted">Measured value</label><input type="number" step="0.01" value={learningMeasuredValue} onChange={(event) => setLearningMeasuredValue(event.target.value)} placeholder="Optional" style={{ width: "100%" }} /></div>
+                <div><label className="muted">Unit</label><select value={learningUnit} onChange={(event) => setLearningUnit(event.target.value)} style={{ width: "100%" }}><option value="count">Count</option><option value="ft">Feet</option><option value="sq_ft">Square feet</option><option value="m">Metres</option><option value="sq_m">Square metres</option></select></div>
+                <div><label className="muted">Required by rule</label><input type="text" value={learningExpectedValue} onChange={(event) => setLearningExpectedValue(event.target.value)} placeholder="e.g. 20 stairs" style={{ width: "100%" }} /></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                <div><label className="muted">Rule code/reference</label><input type="text" value={learningRuleCode} onChange={(event) => setLearningRuleCode(event.target.value)} placeholder="Rule book reference" style={{ width: "100%" }} /></div>
+                <div><label className="muted">Officer finding</label><select value={learningCompliance} onChange={(event) => setLearningCompliance(event.target.value)} style={{ width: "100%" }}><option value="compliant">Compliant</option><option value="non_compliant">Non-compliant</option><option value="needs_review">Needs review</option><option value="not_applicable">Not applicable</option></select></div>
+              </div>
+              <label className="muted" style={{ display: "block", marginTop: 8 }}>Officer note</label>
+              <textarea value={learningNotes} onChange={(event) => setLearningNotes(event.target.value)} rows={3} placeholder="Example: This region contains 20 stair risers, which meets rule XYZ." style={{ width: "100%" }} />
+              <button type="button" onClick={saveLearningExample} disabled={savingLearningExample || !learningSnapshot || !learningNotes.trim()} style={{ width: "100%", marginTop: 9, background: "#0f6b5f", color: "#fff", fontWeight: 800 }}>
+                {savingLearningExample ? "Saving learning example…" : "Save learning example"}
+              </button>
+              <div className="muted" style={{ marginTop: 7 }}>Saved examples include the PNG crop, CAD coordinates, entity handles, floor, layers, facts, rule result, reviewer, and timestamp.</div>
+            </div>
+            <div className="card" style={{ border: "1px solid #b9d7cf", borderRadius: 10, padding: 10, marginBottom: 10, background: "#fbfffd" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <div><div style={{ fontWeight: 700 }}>AI text report from CAD</div><div className="muted">Structured values read from native DXF text and their drawing positions.</div></div>
+                <span className="pill">{textEntities.length} text items</span>
+              </div>
+              {aiTextMetricRows.length ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 9 }}>
+                  {aiTextMetricRows.map(([key, value]) => (
+                    <div key={`ai-metric-${key}`} style={{ border: "1px solid #e0ebe7", borderRadius: 7, padding: 7, background: "#fff" }}>
+                      <div className="muted">{humanizeTagValue(key)}</div><strong>{String(value)}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="muted" style={{ marginTop: 8 }}>No structured measurement table was detected; individual text findings are still available below.</div>}
+              <div style={{ fontWeight: 700, marginTop: 10, marginBottom: 5 }}>Click a finding to locate and verify it</div>
+              <div style={{ maxHeight: 210, overflow: "auto", display: "grid", gap: 5 }}>
+                {aiTextFindings.map((finding, index) => (
+                  <button key={`ai-text-finding-${index}`} type="button" onClick={() => useAiTextFinding(finding)} style={{ textAlign: "left", padding: 7, border: "1px solid #e0e7ef", borderRadius: 7, background: learningSourceText?.text === finding.text ? "#e8f5ff" : "#fff" }}>
+                    <div style={{ fontWeight: 600 }}>{finding.text}</div>
+                    <div className="muted">{finding.layer || "Unknown layer"}{finding.value_ft != null ? ` · ${finding.value_ft} ft` : ""}{finding.semantic_hints.length ? ` · ${finding.semantic_hints.map(humanizeTagValue).join(", ")}` : ""}</div>
+                  </button>
+                ))}
+                {!aiTextFindings.length ? <div className="muted">No measurement or semantic text findings were detected in this drawing.</div> : null}
+              </div>
+              {learningSourceText ? <div style={{ marginTop: 7, padding: 7, borderRadius: 7, background: "#e9f8f1", color: "#0f6b5f", fontWeight: 600 }}>Selected as evidence: {learningSourceText.text}</div> : null}
+            </div>
+            {expertMarkings.filter((marking) => marking.snapshot_url).length ? (
+              <div className="card" style={{ border: "1px solid #dfe7ef", borderRadius: 10, padding: 10 }}>
+                <div style={{ fontWeight: 700, marginBottom: 7 }}>Saved learning examples</div>
+                {expertMarkings.filter((marking) => marking.snapshot_url).slice().reverse().slice(0, 8).map((marking) => (
+                  <div key={`learning-saved-${marking.id}`} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 8, padding: "7px 0", borderBottom: "1px dashed #e5e7eb" }}>
+                    <img src={marking.snapshot_url} alt={marking.label_name || marking.label_key} style={{ width: 72, height: 58, objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" }} />
+                    <div><strong>{marking.label_name || marking.label_key}</strong><div className="muted">{marking.facts_json?.count != null ? `${marking.facts_json.count} ${marking.facts_json.unit || ""}` : "Structured observation"} · {String(marking.compliance_status || "needs_review").replace(/_/g, " ")}</div><div className="muted">{marking.remarks || "No note"}</div></div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Selected Tag &amp; Validation</div>
+          <div className="card" style={{ border: "1px solid #cbd9e8", borderRadius: 10, padding: 10, marginBottom: 10, background: "#f8fbff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <div style={{ fontWeight: 700 }}>AI prediction review</div>
+              <span className="pill">{taggingWorkspace.progress?.reviewed || 0} / {taggingWorkspace.progress?.total || 0}</span>
+            </div>
+            <div className="muted" style={{ marginTop: 4 }}>
+              {Number(taggingWorkspace.progress?.percent || 0).toFixed(1)}% reviewed. AI output is not training data until expert verification.
+            </div>
+            <div style={{ height: 6, background: "#e8edf3", borderRadius: 999, overflow: "hidden", margin: "8px 0" }}>
+              <div style={{ height: "100%", width: `${Math.min(100, Number(taggingWorkspace.progress?.percent || 0))}%`, background: "#0f6b5f" }} />
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <select value={predictionStatusFilter} onChange={(event) => setPredictionStatusFilter(event.target.value)} style={{ flex: 1 }}>
+                <option value="unreviewed">Unreviewed</option><option value="all">All</option>
+                <option value="confirmed">Confirmed</option><option value="corrected">Corrected</option>
+                <option value="rejected">Rejected</option><option value="uncertain">Uncertain</option><option value="verified">Verified</option>
+              </select>
+              <button type="button" onClick={loadTaggingWorkspace}>Refresh</button>
+            </div>
+            <div style={{ maxHeight: 150, overflow: "auto", display: "grid", gap: 5 }}>
+              {visiblePredictions.map((prediction) => (
+                <button
+                  key={`prediction-${prediction.id}`}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPredictionId(prediction.id);
+                    setCorrectedPredictionLabel(prediction.final_label_key || prediction.label_key || "");
+                    if (prediction.cad_handle) {
+                      const entity = cadEntitiesRef.current.find((row) => row.handle === prediction.cad_handle);
+                      if (entity) { selectEntityCandidate(candidateFromHandle(entity.handle, "prediction", 0)); zoomToEntity(entity); }
+                    }
+                  }}
+                  style={{ textAlign: "left", border: Number(selectedPredictionId) === Number(prediction.id) ? "1px solid #0b3d91" : "1px solid #dde4ec", borderRadius: 7, padding: 7, background: Number(selectedPredictionId) === Number(prediction.id) ? "#eaf2ff" : "#fff" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+                    <strong>{resolveTagLabel(prediction.label_key, tagOptions)}</strong>
+                    <span>{prediction.confidence == null ? "—" : `${Math.round(Number(prediction.confidence) * 100)}%`}</span>
+                  </div>
+                  <div className="muted">#{prediction.id} · {prediction.cad_layer || "No layer"} · {prediction.floor || floorContext} · {prediction.status}</div>
+                </button>
+              ))}
+              {!visiblePredictions.length ? <div className="muted">No predictions match this filter.</div> : null}
+            </div>
+            {selectedPrediction ? (
+              <div style={{ borderTop: "1px dashed #cad5e1", marginTop: 9, paddingTop: 9 }}>
+                <div style={{ fontWeight: 700 }}>{resolveTagLabel(selectedPrediction.label_key, tagOptions)}</div>
+                <div className="muted">Handle: {selectedPrediction.cad_handle || "—"} · Layer: {selectedPrediction.cad_layer || "—"}</div>
+                <div className="muted">Geometry: {selectedPrediction.geometry_type || "—"} · Model: {selectedPrediction.model_version || "—"}</div>
+                <div className="muted">Confidence: {selectedPrediction.confidence == null ? "—" : Number(selectedPrediction.confidence).toFixed(3)}</div>
+                {selectedPrediction.tag ? (
+                  <div style={{ marginTop: 6, padding: 7, borderRadius: 7, background: selectedPrediction.tag.validation_messages?.some((row) => row.status === "violation") ? "#fff0f0" : "#f2fbf7" }}>
+                    <div className="muted">Area: {selectedPrediction.tag.unit_confirmed ? `${Number(selectedPrediction.tag.area_sq_ft || 0).toFixed(2)} sq ft / ${Number(selectedPrediction.tag.area_sq_m || 0).toFixed(2)} sq m` : "Provisional — confirm unit/scale"}</div>
+                    <div className="muted">Width: {Number(selectedPrediction.tag.width || 0).toFixed(2)} ft · Length: {Number(selectedPrediction.tag.length || 0).toFixed(2)} ft · Perimeter: {Number(selectedPrediction.tag.perimeter || 0).toFixed(2)} ft</div>
+                    <div className="muted">Closure: {selectedPrediction.tag.is_closed ? "Closed" : "Open / not applicable"} · Verification: {selectedPrediction.tag.verification_level}</div>
+                    {(selectedPrediction.tag.validation_messages || []).map((message) => (
+                      <div key={`${message.rule_code}-${message.status}`} style={{ color: message.status === "violation" ? "#b21c1c" : message.status === "pass" ? "#0f6b5f" : "#946200", fontWeight: 600, marginTop: 4 }}>{message.message}</div>
+                    ))}
+                  </div>
+                ) : null}
+                <select value={correctedPredictionLabel} onChange={(event) => setCorrectedPredictionLabel(event.target.value)} style={{ width: "100%", marginTop: 7 }}>
+                  <option value="">Change label…</option>
+                  {tagOptions.filter((item) => item.value).map((item) => <option key={`correction-${item.value}`} value={item.value}>{item.label}</option>)}
+                </select>
+                <textarea value={predictionRemarks} onChange={(event) => setPredictionRemarks(event.target.value)} placeholder="Validation remarks" rows={2} style={{ width: "100%", marginTop: 7 }} />
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+                  <button type="button" onClick={() => reviewPrediction("confirm")} disabled={predictionBusy}>Confirm AI Tag</button>
+                  <button type="button" onClick={() => reviewPrediction("correct")} disabled={predictionBusy || !correctedPredictionLabel}>Change Label</button>
+                  <button type="button" onClick={() => reviewPrediction("reject")} disabled={predictionBusy}>Reject</button>
+                  <button type="button" onClick={() => reviewPrediction("uncertain")} disabled={predictionBusy}>Uncertain</button>
+                  <button type="button" onClick={() => reviewPrediction("confirm")} disabled={predictionBusy}>Save &amp; Next</button>
+                </div>
+              </div>
+            ) : null}
+            <div style={{ borderTop: "1px dashed #cad5e1", marginTop: 9, paddingTop: 9 }}>
+              <div className="muted">Bulk confirm threshold</div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 5 }}>
+                <input type="number" min="0" max="1" step="0.05" value={predictionConfidence} onChange={(event) => setPredictionConfidence(event.target.value)} style={{ width: 75 }} />
+                <button type="button" onClick={bulkConfirmPredictions} disabled={predictionBusy}>Confirm above threshold</button>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+                <button type="button" onClick={submitVerifiedTrainingData} disabled={predictionBusy}>Submit Verified Training Data</button>
+                <button type="button" onClick={runTagEvaluation} disabled={predictionBusy}>Calculate Accuracy</button>
+              </div>
+              {evaluationSummary ? (
+                <div className="muted" style={{ marginTop: 7 }}>
+                  Micro F1 {Number(evaluationSummary.micro_f1 || 0).toFixed(3)} · Macro F1 {Number(evaluationSummary.macro_f1 || 0).toFixed(3)} · IoU {Number(evaluationSummary.average_polygon_iou || 0).toFixed(3)}
+                </div>
+              ) : null}
+            </div>
+          </div>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>AI/Chat Mapping Panel</div>
           <div className="card" style={{ border: "1px solid #eee", borderRadius: 10, padding: 10, marginBottom: 10 }}>
             <div style={{ fontWeight: 700, marginBottom: 6, color: "#0b3d91" }}>Rule Assistant</div>
