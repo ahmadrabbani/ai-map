@@ -64,16 +64,75 @@ class CadTaggingApiController extends Controller
             'predictions.*.floor' => 'nullable|string|max:120',
             'predictions.*.metadata' => 'nullable|array',
         ]);
-        $created = DB::transaction(fn () => collect($data['predictions'])->map(fn (array $prediction) => CadPrediction::create([
-            'cad_submission_id' => $submission->id,
-            'label_key' => $prediction['label_key'], 'label_name' => $prediction['label_name'] ?? null,
-            'geometry_type' => $prediction['geometry']['type'] ?? null, 'geometry_json' => $prediction['geometry'],
-            'confidence' => $prediction['confidence'] ?? null, 'model_version' => $prediction['model_version'] ?? null,
-            'cad_handle' => $prediction['cad_handle'] ?? null, 'cad_layer' => $prediction['cad_layer'] ?? null,
-            'floor' => $prediction['floor'] ?? null, 'status' => 'ai_suggested',
-            'metadata' => $prediction['metadata'] ?? null,
-        ])));
-        return response()->json(['created' => $created->count()], 201);
+        $result = DB::transaction(function () use ($submission, $data) {
+            $evidenceKey = function (?array $metadata, ?string $cadHandle): string {
+                $handle = trim((string) (data_get($metadata, 'cad_text_evidence.cad_handle') ?: $cadHandle));
+                if ($handle !== '') {
+                    return 'handle:'.$handle;
+                }
+                $text = trim(strtolower((string) data_get($metadata, 'cad_text_evidence.raw_text', '')));
+                $x = data_get($metadata, 'cad_text_evidence.x');
+                $y = data_get($metadata, 'cad_text_evidence.y');
+                return ($text !== '' && is_numeric($x) && is_numeric($y))
+                    ? 'point:'.round((float) $x, 4).':'.round((float) $y, 4).':'.$text
+                    : '';
+            };
+            $existingPredictions = $submission->predictions()->get();
+            $existingBySourceKey = $existingPredictions
+                ->filter(fn (CadPrediction $prediction) => filled(data_get($prediction->metadata, 'source_key')))
+                ->keyBy(fn (CadPrediction $prediction) => (string) data_get($prediction->metadata, 'source_key'));
+            $existingByEvidenceKey = $existingPredictions
+                ->filter(fn (CadPrediction $prediction) => data_get($prediction->metadata, 'source') === 'native_cad_text')
+                ->mapWithKeys(function (CadPrediction $prediction) use ($evidenceKey) {
+                    $key = $evidenceKey($prediction->metadata, $prediction->cad_handle);
+                    return $key !== '' ? [$key => $prediction] : [];
+                });
+            $created = 0;
+            $updated = 0;
+            $preserved = 0;
+
+            foreach ($data['predictions'] as $prediction) {
+                $values = [
+                    'label_key' => $prediction['label_key'], 'label_name' => $prediction['label_name'] ?? null,
+                    'geometry_type' => $prediction['geometry']['type'] ?? null, 'geometry_json' => $prediction['geometry'],
+                    'confidence' => $prediction['confidence'] ?? null, 'model_version' => $prediction['model_version'] ?? null,
+                    'cad_handle' => $prediction['cad_handle'] ?? null, 'cad_layer' => $prediction['cad_layer'] ?? null,
+                    'floor' => $prediction['floor'] ?? null, 'metadata' => $prediction['metadata'] ?? null,
+                ];
+                $sourceKey = trim((string) data_get($prediction, 'metadata.source_key', ''));
+                $incomingEvidenceKey = $evidenceKey(
+                    $prediction['metadata'] ?? null,
+                    $prediction['cad_handle'] ?? null
+                );
+                $existing = ($sourceKey !== '' ? $existingBySourceKey->get($sourceKey) : null)
+                    ?: ($incomingEvidenceKey !== '' ? $existingByEvidenceKey->get($incomingEvidenceKey) : null);
+
+                if ($existing) {
+                    // Refresh machine suggestions when geometry extraction improves, but never
+                    // overwrite a decision already made by an officer.
+                    if (in_array($existing->status, ['unreviewed', 'ai_suggested'], true)) {
+                        $existing->fill($values)->save();
+                        $updated++;
+                    } else {
+                        $preserved++;
+                    }
+                    continue;
+                }
+
+                $createdPrediction = $submission->predictions()->create($values + ['status' => 'ai_suggested']);
+                if ($sourceKey !== '') {
+                    $existingBySourceKey->put($sourceKey, $createdPrediction);
+                }
+                if ($incomingEvidenceKey !== '') {
+                    $existingByEvidenceKey->put($incomingEvidenceKey, $createdPrediction);
+                }
+                $created++;
+            }
+
+            return compact('created', 'updated', 'preserved');
+        });
+
+        return response()->json($result, 201);
     }
 
     public function listTags(int $id)
@@ -136,6 +195,10 @@ class CadTaggingApiController extends Controller
             'label_key' => 'nullable|string|max:120', 'label_name' => 'nullable|string|max:255',
             'geometry_json' => 'nullable|array', 'unit' => 'nullable|string|max:20',
             'scale' => 'nullable|numeric|min:0.00000001', 'unit_confirmed' => 'nullable|boolean',
+            'floor' => 'nullable|string|max:120',
+            'observed_count' => 'nullable|integer|min:0|max:100000',
+            'area_sq_ft' => 'nullable|numeric|min:0|max:1000000000',
+            'measurement_method' => 'nullable|string|max:120',
             'remarks' => 'nullable|string|max:2000',
         ]);
 
@@ -144,8 +207,29 @@ class CadTaggingApiController extends Controller
             $status = match ($data['action']) { 'confirm' => 'confirmed', 'correct' => 'corrected', 'reject' => 'rejected', default => 'uncertain' };
             $finalLabel = $data['action'] === 'correct' ? ($data['label_key'] ?? null) : $prediction->label_key;
             abort_if($data['action'] === 'correct' && ! $finalLabel, 422, 'A corrected prediction requires a label.');
+            $proposedMeasurements = (array) data_get($prediction->metadata, 'measurement_suggestion', []);
+            $observedCount = array_key_exists('observed_count', $data)
+                ? $data['observed_count']
+                : data_get($proposedMeasurements, 'observed_count');
+            $areaSqFt = array_key_exists('area_sq_ft', $data)
+                ? $data['area_sq_ft']
+                : data_get($proposedMeasurements, 'area_sq_ft');
+            $measurementMethod = $data['measurement_method'] ?? data_get($proposedMeasurements, 'method');
+            $predictionMetadata = (array) ($prediction->metadata ?? []);
+            if (in_array($data['action'], ['confirm', 'correct'], true)) {
+                data_set($predictionMetadata, 'reviewed_measurements', array_filter([
+                    'observed_count' => is_numeric($observedCount) ? (int) $observedCount : null,
+                    'area_sq_ft' => is_numeric($areaSqFt) ? round((float) $areaSqFt, 4) : null,
+                    'method' => $measurementMethod,
+                    'officer_edited' => array_key_exists('observed_count', $data) || array_key_exists('area_sq_ft', $data),
+                    'reviewed_at' => now()->toIso8601String(),
+                ], fn ($value) => $value !== null));
+            }
             $prediction->update([
                 'status' => $status, 'final_label_key' => $finalLabel, 'review_action' => $data['action'],
+                'label_name' => $data['label_name'] ?? $prediction->label_name,
+                'floor' => $data['floor'] ?? $prediction->floor,
+                'metadata' => $predictionMetadata,
                 'reviewed_by' => $request->user()?->id, 'reviewed_at' => now(),
             ]);
             $tag = null;
@@ -154,6 +238,16 @@ class CadTaggingApiController extends Controller
                 $unit = $data['unit'] ?? data_get($prediction->metadata, 'unit');
                 $scale = $data['scale'] ?? data_get($prediction->metadata, 'scale');
                 $measurements = $geometry->measurements($tagGeometry, $unit, $scale ? (float) $scale : null);
+                if (is_numeric($areaSqFt)) {
+                    $measurements['area_sq_ft'] = round((float) $areaSqFt, 4);
+                    $measurements['area_sq_m'] = round((float) $areaSqFt * 0.09290304, 4);
+                }
+                $measurementAttributes = array_filter([
+                    'observed_count' => is_numeric($observedCount) ? (int) $observedCount : null,
+                    'measurement_method' => $measurementMethod,
+                    'machine_suggestion' => $proposedMeasurements ?: null,
+                    'officer_edited' => array_key_exists('observed_count', $data) || array_key_exists('area_sq_ft', $data),
+                ], fn ($value) => $value !== null);
                 $tag = CadTag::updateOrCreate(
                     ['cad_submission_id' => $submission->id, 'cad_prediction_id' => $prediction->id],
                     array_merge($measurements, [
@@ -161,6 +255,7 @@ class CadTaggingApiController extends Controller
                         'geometry_type' => $tagGeometry['type'] ?? $prediction->geometry_type, 'geometry_json' => $tagGeometry,
                         'cad_handles' => array_values(array_filter([$prediction->cad_handle])), 'cad_layer' => $prediction->cad_layer,
                         'floor' => $prediction->floor, 'unit' => $unit, 'scale' => $scale,
+                        'attributes' => $measurementAttributes,
                         'unit_confirmed' => (bool) ($data['unit_confirmed'] ?? false), 'status' => $status,
                         'verification_level' => 'user_correction', 'source' => 'ai_prediction',
                         'ai_label_key' => $prediction->label_key, 'ai_confidence' => $prediction->confidence,

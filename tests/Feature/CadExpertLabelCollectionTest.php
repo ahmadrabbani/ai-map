@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\BpAiReport;
+use App\Models\BpApplication;
 use App\Models\CadSubmission;
 use App\Models\CadTrainingLabel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -101,6 +103,22 @@ class CadExpertLabelCollectionTest extends TestCase
             'A-PLOT' => ['visible' => true, 'tag' => 'plot_boundary'],
             'A-WALL' => ['visible' => true, 'tag' => 'external_walls'],
         ];
+        $application = BpApplication::create([
+            'application_number' => 'BP-LAYER-REPORT-001',
+            'status' => 'Under AD ePermit Review',
+            'uploaded_file_name' => 'large-plan.dwg',
+            'uploaded_file_path' => 'uploads/cad/large-plan.dwg',
+            'uploaded_file_type' => 'dwg',
+            'qr_token' => 'layer-report-token',
+            'verification_url' => 'http://localhost/verify/layer-report-token',
+            'cad_submission_id' => $submission->id,
+        ]);
+        $aiReport = BpAiReport::create([
+            'bp_application_id' => $application->id,
+            'analysis_status' => 'needs_expert_review',
+            'ai_recommendation' => 'Needs Expert Review',
+            'analysis_json' => [],
+        ]);
 
         $response = $this->postJson(route('admin.plan.cad-layer-map.store', ['id' => $submission->id]), [
             'layer_map_json' => json_encode($viewerMap),
@@ -111,7 +129,18 @@ class CadExpertLabelCollectionTest extends TestCase
             ->assertJson([
                 'message' => 'Layer mapping applied successfully.',
                 'layer_map' => $viewerMap,
+                'identification_report' => [
+                    'status' => 'updated_from_officer_marking',
+                    'object_count' => 2,
+                    'training_capture' => 'saved',
+                    'model_retraining' => 'separate_governed_step',
+                ],
             ]);
+        $response
+            ->assertJsonPath('identification_report.objects.0.cad_layer', 'A-PLOT')
+            ->assertJsonPath('identification_report.objects.0.object_name', 'Plot Boundary')
+            ->assertJsonPath('identification_report.objects.1.cad_layer', 'A-WALL')
+            ->assertJsonPath('identification_report.objects.1.object_name', 'External Walls');
 
         $this->assertDatabaseHas('cad_expert_labels', [
             'cad_submission_id' => $submission->id,
@@ -121,6 +150,16 @@ class CadExpertLabelCollectionTest extends TestCase
             $viewerMap,
             CadTrainingLabel::where('cad_submission_id', $submission->id)->firstOrFail()->layer_map
         );
+        $this->assertSame(
+            'external_walls',
+            data_get($aiReport->fresh()->analysis_json, 'officer_verified_layer_identifications.objects.1.object_key')
+        );
+
+        $this->get(route('admin.plan.bp.report.show', $application))
+            ->assertOk()
+            ->assertSee('Officer-Verified Object Identification')
+            ->assertSee('A-WALL')
+            ->assertSee('External Walls');
     }
 
     public function test_officer_can_save_a_region_snapshot_as_structured_learning_data(): void

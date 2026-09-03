@@ -7,6 +7,7 @@ use App\Models\MapDrawing;
 use App\Services\AiMapAnalysisService;
 use App\Services\AiReportGenerationService;
 use App\Services\MapApproval\GeometryCalculationService;
+use App\Services\MapApproval\CadLayerIdentificationReportService;
 use App\Services\MapApproval\RuleValidationService;
 use App\Services\MapApproval\StructuralExtractionService;
 
@@ -17,6 +18,7 @@ class BuildingPlanAiReportController extends Controller
         private readonly GeometryCalculationService $geometryCalculationService,
         private readonly RuleValidationService $mapRuleValidationService,
         private readonly StructuralExtractionService $structuralExtractionService,
+        private readonly CadLayerIdentificationReportService $layerIdentificationReportService,
     ) {
     }
 
@@ -238,6 +240,16 @@ class BuildingPlanAiReportController extends Controller
             })
             ->values()
             ->all();
+        $layerIdentificationReport = (array) data_get($analysisJson, 'officer_verified_layer_identifications', []);
+        if ($application->cad_submission_id) {
+            $submission = $application->cadSubmission;
+            if ($submission) {
+                $currentIdentificationReport = $this->layerIdentificationReportService->forSubmission($submission);
+                if (($currentIdentificationReport['object_count'] ?? 0) > 0) {
+                    $layerIdentificationReport = $currentIdentificationReport;
+                }
+            }
+        }
 
         return [
             'application' => $application,
@@ -256,6 +268,7 @@ class BuildingPlanAiReportController extends Controller
             'structuralGraphNodes' => $graphNodes,
             'structuralGraphEdges' => $graphEdges,
             'structuralGraphRelationCounts' => $graphRelationCounts,
+            'layerIdentificationReport' => $layerIdentificationReport,
             'disclaimer' => AiReportGenerationService::DISCLAIMER,
         ];
     }

@@ -144,6 +144,26 @@
         @endif
     </div>
 
+    <h2>Officer-Verified Object Identification</h2>
+    <div class="card">
+        <div class="muted">Latest AD ePermit layer markings captured as expert training labels. Model retraining is a separate governed step.</div>
+        <table>
+            <thead><tr><th>CAD Layer</th><th>Identified Object</th><th>Verification</th><th>Training Capture</th></tr></thead>
+            <tbody>
+            @forelse((array) data_get($layerIdentificationReport, 'objects', []) as $object)
+                <tr>
+                    <td>{{ $object['cad_layer'] ?? '-' }}</td>
+                    <td>{{ $object['object_name'] ?? $object['object_key'] ?? '-' }}</td>
+                    <td>{{ str_replace('_', ' ', $object['verification_status'] ?? 'officer_verified') }}</td>
+                    <td>{{ str_replace('_', ' ', $object['training_status'] ?? 'captured_as_expert_label') }}</td>
+                </tr>
+            @empty
+                <tr><td colspan="4">No officer-verified layer identifications have been saved yet.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+    </div>
+
     <h2>Textual Data vs AI/CAD Read Values</h2>
     @if(!empty($textualFindings))
         <div class="card">

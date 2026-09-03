@@ -77,5 +77,9 @@
         </div>
     </div>
 </div>
-<div class="mt-3">{{ $applications->links() }}</div>
+@if($applications->hasPages())
+    <div class="mt-3 d-flex justify-content-center" aria-label="AD ePermit application pages">
+        {{ $applications->onEachSide(1)->links('pagination::bootstrap-5') }}
+    </div>
+@endif
 @endsection

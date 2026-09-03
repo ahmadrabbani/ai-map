@@ -124,6 +124,38 @@ class AdEpermitWorkflowTest extends TestCase
             ->assertSee('1');
     }
 
+    public function test_ad_dashboard_pagination_uses_bootstrap_and_preserves_status_filter(): void
+    {
+        $user = $this->adUser();
+        $application = $this->seededApplication();
+
+        foreach (range(2, 21) as $number) {
+            $copy = $application->replicate();
+            $copy->application_no = sprintf('BP-20260517-%05d', $number);
+            $copy->save();
+        }
+
+        $firstPage = $this->actingAs($user)
+            ->get(route('admin.plan.bp.ad.index', ['status' => 'assigned']));
+
+        $firstPage
+            ->assertOk()
+            ->assertSee('pagination')
+            ->assertSee(route('admin.plan.bp.ad.index', [
+                'status' => 'assigned',
+                'page' => 2,
+            ]));
+
+        $this->actingAs($user)
+            ->get(route('admin.plan.bp.ad.index', [
+                'status' => 'assigned',
+                'page' => 2,
+            ]))
+            ->assertOk()
+            ->assertSee('BP-20260517-00001')
+            ->assertDontSee('BP-20260517-00021');
+    }
+
     public function test_observation_and_rejection_requirements_and_status_logs(): void
     {
         $user = $this->adUser();

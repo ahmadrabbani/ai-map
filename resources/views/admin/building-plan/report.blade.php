@@ -48,6 +48,32 @@
     </div>
 
     <div class="card mb-3">
+        <div class="card-header">Officer-Verified Object Identification</div>
+        <div class="card-body">
+            <div class="alert alert-success mb-3">
+                This section reflects the latest AD ePermit layer markings. These mappings are saved as expert training labels; model retraining is tracked separately.
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>CAD Layer</th><th>Identified Object</th><th>Verification</th><th>Training Capture</th></tr></thead>
+                    <tbody>
+                    @forelse((array) data_get($layerIdentificationReport, 'objects', []) as $object)
+                        <tr>
+                            <td>{{ $object['cad_layer'] ?? '-' }}</td>
+                            <td><strong>{{ $object['object_name'] ?? $object['object_key'] ?? '-' }}</strong></td>
+                            <td>{{ str_replace('_', ' ', $object['verification_status'] ?? 'officer_verified') }}</td>
+                            <td>{{ str_replace('_', ' ', $object['training_status'] ?? 'captured_as_expert_label') }}</td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="4" class="text-muted">No officer-verified layer identifications have been saved yet.</td></tr>
+                    @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
         <div class="card-header">Textual Data vs AI/CAD Read Values</div>
         <div class="card-body">
             <div class="alert alert-info mb-3">

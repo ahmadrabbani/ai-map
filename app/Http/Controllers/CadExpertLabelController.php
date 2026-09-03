@@ -18,6 +18,7 @@ use App\Models\MapEntity;
 use Illuminate\Support\Collection;
 use App\Services\CadApprovalRuleService;
 use App\Services\MapApproval\GeometryCalculationService;
+use App\Services\MapApproval\CadLayerIdentificationReportService;
 use App\Services\MapApproval\MapApprovalReportService;
 use App\Services\MapApproval\DxfPatternTrainingService;
 use App\Services\MapApproval\RuleValidationService;
@@ -33,6 +34,7 @@ class CadExpertLabelController extends Controller
 {
     public function __construct(
         private readonly DxfPatternTrainingService $dxfPatternTrainingService,
+        private readonly CadLayerIdentificationReportService $layerIdentificationReportService,
     ) {
     }
 
@@ -227,6 +229,7 @@ class CadExpertLabelController extends Controller
                 ->first();
         }
         $this->syncCadEntitiesForSubmission($submission, $mapDrawing);
+        $layerIdentificationReport = $this->layerIdentificationReportService->forSubmission($submission);
 
         return view('admin.plans.cad_layer_viewer', compact(
             'submission',
@@ -237,7 +240,8 @@ class CadExpertLabelController extends Controller
             'rulesetOverview',
             'rulesMetadata',
             'mapDrawing',
-            'tagOptions'
+            'tagOptions',
+            'layerIdentificationReport'
         ));
     }
 
@@ -1286,13 +1290,23 @@ PROMPT;
         }
 
         $label->layer_map_json = $data['layer_map_json'];
+        if ($request->user()) {
+            $label->labeled_by = (string) ($request->user()->email ?: $request->user()->name ?: $request->user()->id);
+        }
         $label->save();
         $this->syncTrainingLabel($submission, $label);
+        $identificationReport = $this->layerIdentificationReportService->build(
+            $decoded,
+            $label->labeled_by,
+            $label->updated_at?->toIso8601String(),
+        );
+        $this->layerIdentificationReportService->syncLinkedReports($submission, $identificationReport);
 
         if ($request->expectsJson()) {
             return response()->json([
                 'message' => 'Layer mapping applied successfully.',
                 'layer_map' => $decoded,
+                'identification_report' => $identificationReport,
             ]);
         }
 

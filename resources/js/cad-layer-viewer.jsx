@@ -478,6 +478,12 @@ function normalizeCadPoint(point) {
   return null;
 }
 
+function finiteCadCoordinate(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function entityPoints(entity) {
   const raw = entity?.geometry_json?.points || entity?.points || [];
   return Array.isArray(raw) ? raw.map(normalizeCadPoint).filter(Boolean) : [];
@@ -759,11 +765,24 @@ function extractScaleCandidates(text) {
 
 function parseFeetInchesToFeet(text) {
   if (!text) return null;
-  const cleaned = String(text).replace(/\s+/g, " ");
-  let match = cleaned.match(/(\d+(?:\.\d+)?)\s*'\s*[- ]?\s*(\d+(?:\.\d+)?)\s*(?:\"|”|in)?/i);
+  const cleaned = String(text).replace(/[’′]/g, "'").replace(/[“”″]/g, '"').replace(/\s+/g, " ");
+  const fractionalNumber = (value) => {
+    const source = String(value || "").trim();
+    if (!source) return 0;
+    const mixed = source.match(/^(\d+(?:\.\d+)?)?\s*(\d+)\s*\/\s*(\d+)$/);
+    if (mixed) {
+      const whole = Number(mixed[1] || 0);
+      const numerator = Number(mixed[2]);
+      const denominator = Number(mixed[3]);
+      return denominator > 0 ? whole + (numerator / denominator) : null;
+    }
+    const number = Number(source);
+    return Number.isFinite(number) ? number : null;
+  };
+  let match = cleaned.match(/(\d+(?:\.\d+)?)\s*'\s*[- ]?\s*((?:\d+(?:\.\d+)?)?(?:\s+)?\d+\s*\/\s*\d+|\d+(?:\.\d+)?)?\s*(?:"|in)?/i);
   if (match) {
     const ft = Number(match[1]);
-    const inches = Number(match[2]);
+    const inches = fractionalNumber(match[2]);
     if (Number.isFinite(ft) && Number.isFinite(inches)) {
       return ft + (inches / 12);
     }
@@ -779,6 +798,130 @@ function parseFeetInchesToFeet(text) {
     if (Number.isFinite(ft)) return ft;
   }
   return null;
+}
+
+function parseDimensionPairToFeet(text) {
+  const parts = String(text || "").split(/\s*[x×]\s*/i);
+  if (parts.length < 2) return null;
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const widthFt = parseFeetInchesToFeet(parts[index]);
+    const lengthFt = parseFeetInchesToFeet(parts[index + 1]);
+    if (Number.isFinite(widthFt) && widthFt > 0 && Number.isFinite(lengthFt) && lengthFt > 0) {
+      return {
+        width_ft: Number(widthFt.toFixed(3)),
+        length_ft: Number(lengthFt.toFixed(3)),
+        area_sq_ft: Number((widthFt * lengthFt).toFixed(2)),
+      };
+    }
+  }
+  return null;
+}
+
+function nearbyDimensionSuggestion(textItem, textItems, roomEntity) {
+  const direct = parseDimensionPairToFeet(textItem?.text);
+  if (direct) return { ...direct, source_text: textItem.text, source_handle: textItem.handle || null };
+  const origin = { x: finiteCadCoordinate(textItem?.x), y: finiteCadCoordinate(textItem?.y) };
+  const roomBounds = entityBounds(roomEntity);
+  const candidates = (textItems || []).map((item) => {
+    const dimensions = parseDimensionPairToFeet(item?.text);
+    const x = finiteCadCoordinate(item?.x);
+    const y = finiteCadCoordinate(item?.y);
+    if (!dimensions || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (roomBounds && !pointInBounds({ x, y }, roomBounds)) return null;
+    return {
+      ...dimensions,
+      source_text: item.text,
+      source_handle: item.handle || null,
+      distance: Number.isFinite(origin.x) && Number.isFinite(origin.y) ? Math.hypot(x - origin.x, y - origin.y) : Infinity,
+    };
+  }).filter(Boolean).sort((a, b) => a.distance - b.distance);
+  return candidates[0] || null;
+}
+
+function detectRepeatedParallelStairLines(textItem, entities, roomEntity, scaleMultiplier = 1, unitConfirmed = false) {
+  const x = finiteCadCoordinate(textItem?.x);
+  const y = finiteCadCoordinate(textItem?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const allBounds = (entities || []).map(entityBounds).filter(Boolean);
+  const drawingSpan = allBounds.length ? Math.max(
+    Math.max(...allBounds.map((bounds) => bounds.maxX)) - Math.min(...allBounds.map((bounds) => bounds.minX)),
+    Math.max(...allBounds.map((bounds) => bounds.maxY)) - Math.min(...allBounds.map((bounds) => bounds.minY))
+  ) : 1000;
+  const roomBounds = entityBounds(roomEntity);
+  const radius = Math.max(Number(textItem?.height || 0) * 24, drawingSpan * 0.045, 12);
+  const segments = [];
+  for (const entity of entities || []) {
+    if (/(?:text|hatch|insert|circle|arc)/i.test(entity?.entity_type || "")) continue;
+    const points = entityPoints(entity);
+    for (let index = 1; index < points.length; index += 1) {
+      const start = points[index - 1];
+      const end = points[index];
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const length = Math.hypot(dx, dy);
+      if (!(length > 0)) continue;
+      const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+      if (roomBounds ? !pointInBounds(midpoint, roomBounds, drawingSpan * 0.002) : Math.hypot(midpoint.x - x, midpoint.y - y) > radius) continue;
+      let angle = Math.atan2(dy, dx);
+      if (angle < 0) angle += Math.PI;
+      if (angle >= Math.PI) angle -= Math.PI;
+      segments.push({ start, end, midpoint, length, angle, handle: entity.handle || null });
+    }
+  }
+  const groups = new Map();
+  const angleStep = Math.PI / 36;
+  for (const segment of segments) {
+    const key = Math.round(segment.angle / angleStep);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(segment);
+  }
+  const patterns = [];
+  for (const group of groups.values()) {
+    if (group.length < 4) continue;
+    const lengths = group.map((segment) => segment.length).sort((a, b) => a - b);
+    const medianLength = lengths[Math.floor(lengths.length / 2)];
+    const comparable = group.filter((segment) => segment.length >= medianLength * 0.55 && segment.length <= medianLength * 1.8);
+    if (comparable.length < 4) continue;
+    const angle = comparable.reduce((sum, segment) => sum + segment.angle, 0) / comparable.length;
+    const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+    const normal = { x: -direction.y, y: direction.x };
+    const offsetTolerance = Math.max(medianLength * 0.018, drawingSpan * 0.00025, 0.01);
+    const unique = [];
+    for (const segment of comparable.sort((a, b) => (
+      (a.midpoint.x * normal.x + a.midpoint.y * normal.y) - (b.midpoint.x * normal.x + b.midpoint.y * normal.y)
+    ))) {
+      const offset = segment.midpoint.x * normal.x + segment.midpoint.y * normal.y;
+      if (!unique.length || Math.abs(offset - unique[unique.length - 1].offset) > offsetTolerance) unique.push({ ...segment, offset });
+    }
+    if (unique.length < 4) continue;
+    const gaps = unique.slice(1).map((segment, index) => segment.offset - unique[index].offset).filter((gap) => gap > offsetTolerance);
+    const sortedGaps = gaps.slice().sort((a, b) => a - b);
+    const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)] || 0;
+    const sequences = [];
+    let sequence = [unique[0]];
+    for (let index = 1; index < unique.length; index += 1) {
+      if (!medianGap || unique[index].offset - unique[index - 1].offset <= medianGap * 2.5) sequence.push(unique[index]);
+      else { sequences.push(sequence); sequence = [unique[index]]; }
+    }
+    sequences.push(sequence);
+    const repeated = sequences.sort((a, b) => b.length - a.length)[0];
+    if (repeated.length < 4) continue;
+    const along = repeated.flatMap((segment) => [segment.start, segment.end]).map((point) => point.x * direction.x + point.y * direction.y);
+    const across = repeated.map((segment) => segment.offset);
+    const widthCad = Math.max(...along) - Math.min(...along);
+    const lengthCad = Math.max(...across) - Math.min(...across) + medianGap;
+    const factor = Number.isFinite(Number(scaleMultiplier)) && Number(scaleMultiplier) > 0 ? Number(scaleMultiplier) : 1;
+    patterns.push({
+      observed_count: repeated.length,
+      width_ft: Number((widthCad * factor).toFixed(3)),
+      length_ft: Number((lengthCad * factor).toFixed(3)),
+      area_sq_ft: Number((widthCad * lengthCad * factor * factor).toFixed(2)),
+      source_handles: [...new Set(repeated.map((segment) => segment.handle).filter(Boolean))],
+      spacing_consistency: medianGap > 0 ? Number((1 - Math.min(1, gaps.reduce((sum, gap) => sum + Math.abs(gap - medianGap), 0) / (gaps.length * medianGap))).toFixed(3)) : 0,
+      unit_confirmed: !!unitConfirmed,
+    });
+  }
+  return patterns.sort((a, b) => b.observed_count - a.observed_count || b.spacing_consistency - a.spacing_consistency)[0] || null;
 }
 
 function semanticHintsFromText(text) {
@@ -798,6 +941,236 @@ function semanticHintsFromText(text) {
   if (/(passage|corridor)/.test(low) && !hints.length) add("setback_reference");
   if (/(dimension|dim|wide|width|long|length|size)/.test(low)) add("dimensions");
   return hints;
+}
+
+function nativeSpaceLabelFromText(text) {
+  const normalized = String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return null;
+
+  const definitions = [
+    { pattern: /\brear\s+(?:passage|setback|building\s+line)\b/, labelKey: "rear_building_line", labelName: "Rear passage", confidence: 0.98 },
+    { pattern: /\bfront\s+(?:passage|setback|building\s+line)\b/, labelKey: "front_building_line", labelName: "Front passage", confidence: 0.98 },
+    { pattern: /\bside\s+(?:passage|setback|building\s+line)\b/, labelKey: "side_building_line", labelName: "Side passage", confidence: 0.97 },
+    { pattern: /\b(?:bed\s*room|bedroom|bed)\b/, labelKey: "bedroom", labelName: "Bedroom", confidence: 0.97 },
+    { pattern: /\bkitchen\b/, labelKey: "kitchen", labelName: "Kitchen", confidence: 0.97 },
+    { pattern: /\b(?:bath(?:room)?|toilet|washroom|w\s*c)\b/, labelKey: "bathroom", labelName: "Bathroom", confidence: 0.96 },
+    { pattern: /\b(?:porch|car\s+porch)\b/, labelKey: "porch", labelName: "Porch", confidence: 0.96 },
+    { pattern: /\b(?:terrace|balcony)\b/, labelKey: "terrace", labelName: "Terrace", confidence: 0.94 },
+    { pattern: /\b(?:stair|stairs|staircase)\b/, labelKey: "staircase", labelName: "Staircase", confidence: 0.94 },
+    { pattern: /\b(?:drawing|living|t\s*v\s+lounge|tv\s+lounge|lounge|dining|store|lobby)\b/, labelKey: "room", labelName: "Room", confidence: 0.9 },
+  ];
+
+  return definitions.find((definition) => definition.pattern.test(normalized)) || null;
+}
+
+function surroundingRoomEntity(point, entities) {
+  if (!point) return null;
+  const candidates = (entities || []).filter((entity) => {
+    const points = entityPoints(entity);
+    const closed = entity?.geometry_type === "polygon"
+      || !!entity?.is_closed
+      || !!entity?.geometry_json?.is_closed
+      || !!entity?.measurement_json?.closed;
+    return closed && points.length >= 3 && pointInBounds(point, entityBounds(entity)) && pointInPolygon(point, points);
+  });
+  if (!candidates.length) return null;
+
+  const layerPenalty = (entity) => /(?:furniture|fixture|sanitary|door|window|text|dimension|hatch)/i.test(entity?.layer_name || "") ? 1 : 0;
+  return candidates.sort((a, b) => {
+    const penalty = layerPenalty(a) - layerPenalty(b);
+    if (penalty !== 0) return penalty;
+    const aBounds = entityBounds(a);
+    const bBounds = entityBounds(b);
+    const aArea = aBounds ? (aBounds.maxX - aBounds.minX) * (aBounds.maxY - aBounds.minY) : Infinity;
+    const bArea = bBounds ? (bBounds.maxX - bBounds.minX) * (bBounds.maxY - bBounds.minY) : Infinity;
+    return aArea - bArea;
+  })[0];
+}
+
+function floorFromCadText(text) {
+  const normalized = String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  if (/^(?:proposed\s+)?(?:basement(?:\s+floor)?|bsm)(?:\s+plan)?$/.test(normalized)) return "basement";
+  if (/^(?:proposed\s+)?(?:ground(?:\s+floor)?|g\s*f)(?:\s+plan)?$/.test(normalized)) return "ground_floor";
+  if (/^(?:proposed\s+)?(?:first\s+floor|1st\s+floor|f\s*f)(?:\s+plan)?$/.test(normalized)) return "first_floor";
+  if (/^(?:proposed\s+)?(?:second\s+floor|2nd\s+floor|s\s*f)(?:\s+plan)?$/.test(normalized)) return "second_floor";
+  if (/^(?:proposed\s+)?(?:roof|roof\s+floor|terrace)(?:\s+plan)?$/.test(normalized)) return "roof";
+  return "";
+}
+
+function nativeFloorPrefix(floor) {
+  return ({
+    basement: "B1",
+    ground_floor: "G1",
+    first_floor: "F1",
+    second_floor: "F2",
+    roof: "R1",
+  })[floor] || "U1";
+}
+
+function nativeSpaceToken(labelKey) {
+  return ({
+    bedroom: "bed",
+    bathroom: "bath",
+    staircase: "stair",
+    rear_building_line: "rear_passage",
+    front_building_line: "front_passage",
+    side_building_line: "side_passage",
+  })[labelKey] || String(labelKey || "space").replace(/[^a-z0-9]+/g, "_");
+}
+
+function nativeTextEvidenceIdentity(textItem) {
+  const x = finiteCadCoordinate(textItem?.x);
+  const y = finiteCadCoordinate(textItem?.y);
+  const handle = String(textItem?.handle || "");
+  return handle || `${String(textItem?.layer || "")}:${Number(x || 0).toFixed(4)}:${Number(y || 0).toFixed(4)}:${normalizeDxfText(textItem?.text)}`;
+}
+
+function nativeSpacePrediction(textItem, textItems, entities, floor, instanceKey, scaleMultiplier = 1, unitConfirmed = false) {
+  const detected = nativeSpaceLabelFromText(textItem?.text);
+  const x = finiteCadCoordinate(textItem?.x);
+  const y = finiteCadCoordinate(textItem?.y);
+  if (!detected || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+  const roomEntity = surroundingRoomEntity({ x, y }, entities);
+  const roomPoints = roomEntity ? entityPoints(roomEntity) : [];
+  const geometry = roomPoints.length >= 3
+    ? { type: "polygon", points: roomPoints.map((point) => [point.x, point.y]) }
+    : { type: "point", points: [[x, y]] };
+  const evidenceHandle = String(textItem.handle || "");
+  const identity = nativeTextEvidenceIdentity(textItem);
+  const sourceKey = `native-cad-text:${floor || "unknown"}:${identity}:${detected.labelKey}`;
+  const dimensionSuggestion = detected.labelKey === "staircase"
+    ? null
+    : nearbyDimensionSuggestion(textItem, textItems, roomEntity);
+  const stairPattern = detected.labelKey === "staircase"
+    ? detectRepeatedParallelStairLines(textItem, entities, roomEntity, scaleMultiplier, unitConfirmed)
+    : null;
+  const measurementSuggestion = stairPattern ? {
+    method: "repeated_parallel_lines",
+    observed_count: stairPattern.observed_count,
+    width_ft: stairPattern.width_ft,
+    length_ft: stairPattern.length_ft,
+    area_sq_ft: stairPattern.area_sq_ft,
+    source_handles: stairPattern.source_handles,
+    spacing_consistency: stairPattern.spacing_consistency,
+    unit: "sq_ft",
+    unit_confirmed: stairPattern.unit_confirmed,
+    officer_editable: true,
+  } : dimensionSuggestion ? {
+    method: "native_text_dimensions",
+    width_ft: dimensionSuggestion.width_ft,
+    length_ft: dimensionSuggestion.length_ft,
+    area_sq_ft: dimensionSuggestion.area_sq_ft,
+    source_text: dimensionSuggestion.source_text,
+    source_handle: dimensionSuggestion.source_handle,
+    unit: "sq_ft",
+    unit_confirmed: true,
+    officer_editable: true,
+  } : null;
+
+  return {
+    source_key: sourceKey,
+    instance_key: instanceKey,
+    label_key: detected.labelKey,
+    label_name: instanceKey || detected.labelName,
+    confidence: roomEntity ? Math.min(0.99, detected.confidence + 0.01) : detected.confidence,
+    geometry,
+    model_version: "native-cad-text-v1",
+    cad_handle: roomEntity?.handle || evidenceHandle || null,
+    cad_layer: roomEntity?.layer_name || textItem.layer || null,
+    floor: floor || null,
+    metadata: {
+      source: "native_cad_text",
+      source_key: sourceKey,
+      instance_key: instanceKey,
+      plan_floor: floor || null,
+      association: roomEntity ? "containing_closed_entity" : "text_location",
+      measurement_suggestion: measurementSuggestion,
+      cad_text_evidence: {
+        raw_text: textItem.text,
+        cad_layer: textItem.layer || null,
+        cad_handle: evidenceHandle || null,
+        x,
+        y,
+        semantic_hints: [detected.labelKey],
+      },
+    },
+    finding: {
+      text: textItem.text,
+      layer: textItem.layer || "",
+      handle: evidenceHandle || null,
+      x,
+      y,
+      semantic_hints: [detected.labelKey],
+      measurement_suggestion: measurementSuggestion,
+    },
+  };
+}
+
+function buildNativeSpacePredictions(textItems, entities, fallbackFloor, scaleMultiplier = 1, unitConfirmed = false) {
+  const candidates = (textItems || [])
+    .map((item) => {
+      const detected = nativeSpaceLabelFromText(item?.text);
+      const x = finiteCadCoordinate(item?.x);
+      const y = finiteCadCoordinate(item?.y);
+      return detected && Number.isFinite(x) && Number.isFinite(y) ? { item, detected, x, y } : null;
+    })
+    .filter(Boolean);
+  if (!candidates.length) return [];
+
+  const floorAnchors = (textItems || [])
+    .map((item) => {
+      const floor = floorFromCadText(item?.text);
+      const x = finiteCadCoordinate(item?.x);
+      const y = finiteCadCoordinate(item?.y);
+      return floor && Number.isFinite(x) && Number.isFinite(y) ? { floor, x, y } : null;
+    })
+    .filter(Boolean);
+  const xs = candidates.map((candidate) => candidate.x);
+  const ys = candidates.map((candidate) => candidate.y);
+  const drawingSpan = Math.max(
+    xs.length ? Math.max(...xs) - Math.min(...xs) : 0,
+    ys.length ? Math.max(...ys) - Math.min(...ys) : 0
+  );
+  const textHeights = (textItems || []).map((item) => Number(item?.height)).filter((height) => Number.isFinite(height) && height > 0).sort((a, b) => a - b);
+  const medianTextHeight = textHeights.length ? textHeights[Math.floor(textHeights.length / 2)] : 0;
+  const duplicateTolerance = Math.max(0.1, medianTextHeight * 2, drawingSpan / 1000);
+
+  const assigned = candidates.map((candidate) => {
+    const layerFloor = detectFloorToken(candidate.item.layer || "");
+    const nearestAnchor = floorAnchors.slice().sort((a, b) => (
+      Math.hypot(candidate.x - a.x, candidate.y - a.y) - Math.hypot(candidate.x - b.x, candidate.y - b.y)
+    ))[0];
+    return { ...candidate, floor: layerFloor || nearestAnchor?.floor || fallbackFloor || "unknown" };
+  }).sort((a, b) => (
+    String(a.floor).localeCompare(String(b.floor))
+    || String(a.detected.labelKey).localeCompare(String(b.detected.labelKey))
+    || b.y - a.y
+    || a.x - b.x
+  ));
+
+  const deduplicated = [];
+  for (const candidate of assigned) {
+    const duplicate = deduplicated.some((existing) => (
+      existing.floor === candidate.floor
+      && existing.detected.labelKey === candidate.detected.labelKey
+      && Math.hypot(existing.x - candidate.x, existing.y - candidate.y) <= duplicateTolerance
+    ));
+    if (!duplicate) deduplicated.push(candidate);
+  }
+
+  const counters = new Map();
+  return deduplicated.map((candidate) => {
+    const counterKey = `${candidate.floor}:${candidate.detected.labelKey}`;
+    const ordinal = (counters.get(counterKey) || 0) + 1;
+    counters.set(counterKey, ordinal);
+    const instanceKey = `${nativeFloorPrefix(candidate.floor)}_${nativeSpaceToken(candidate.detected.labelKey)}_${ordinal}`;
+    return nativeSpacePrediction(candidate.item, textItems, entities, candidate.floor, instanceKey, scaleMultiplier, unitConfirmed);
+  }).filter(Boolean);
 }
 
 function extractCadTextMeasurements(rows) {
@@ -913,6 +1286,10 @@ function App() {
   const textOverlayGroupRef = useRef(null);
   const autoAppliedSuggestionRowsRef = useRef(new Set());
   const applyingQuickMarkRef = useRef(false);
+  const nativePredictionSyncRef = useRef("");
+  const nativeSuggestionActionRef = useRef(null);
+  const nativeSuggestionRowRefs = useRef({});
+  const nativeSuggestionVisualStateRef = useRef(new Map());
 
   const [layerMeta, setLayerMeta] = useState({});
   const [layerOrder, setLayerOrder] = useState([]);
@@ -990,6 +1367,11 @@ function App() {
   const [pickCandidates, setPickCandidates] = useState(null);
   const [applyingQuickMark, setApplyingQuickMark] = useState(false);
   const [quickMarkFeedback, setQuickMarkFeedback] = useState(null);
+  const [layerIdentificationReport, setLayerIdentificationReport] = useState(() => (
+    config.layerIdentificationReport && typeof config.layerIdentificationReport === "object"
+      ? config.layerIdentificationReport
+      : { status: "awaiting_officer_marking", object_count: 0, objects: [] }
+  ));
   const [taggingWorkspace, setTaggingWorkspace] = useState({ predictions: [], tags: [], rules: [], progress: { reviewed: 0, total: 0, percent: 0 } });
   const [selectedPredictionId, setSelectedPredictionId] = useState(null);
   const [predictionStatusFilter, setPredictionStatusFilter] = useState("unreviewed");
@@ -997,6 +1379,10 @@ function App() {
   const [predictionBusy, setPredictionBusy] = useState(false);
   const [correctedPredictionLabel, setCorrectedPredictionLabel] = useState("");
   const [predictionRemarks, setPredictionRemarks] = useState("");
+  const [nativeSuggestionCorrections, setNativeSuggestionCorrections] = useState({});
+  const [nativeSuggestionMeasurements, setNativeSuggestionMeasurements] = useState({});
+  const [nativePredictionSyncing, setNativePredictionSyncing] = useState(false);
+  const [focusedNativeSourceKey, setFocusedNativeSourceKey] = useState("");
   const [evaluationSummary, setEvaluationSummary] = useState(null);
   const [showAdvancedReviewTools, setShowAdvancedReviewTools] = useState(false);
   const [learningLabel, setLearningLabel] = useState("stairs");
@@ -1220,7 +1606,8 @@ function App() {
 
   async function reviewPrediction(action, prediction = selectedPrediction) {
     if (!prediction || predictionBusy) return;
-    if (action === "correct" && !correctedPredictionLabel) {
+    const correctionLabel = prediction.__correctedLabel || correctedPredictionLabel;
+    if (action === "correct" && !correctionLabel) {
       setStatusMessage("Choose the corrected label first.");
       return;
     }
@@ -1232,10 +1619,15 @@ function App() {
         headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-TOKEN": config.csrfToken },
         body: JSON.stringify({
           action,
-          label_key: action === "correct" ? correctedPredictionLabel : undefined,
+          label_key: action === "correct" ? correctionLabel : undefined,
+          label_name: prediction.__labelName || undefined,
+          floor: prediction.__floor || undefined,
           unit: scaleLabel.includes("inch") ? "IN" : "FT",
           scale: scaleMultiplier,
-          unit_confirmed: scaleTouched || !!autoScaleFromPlotBoundary,
+          unit_confirmed: prediction.__unitConfirmed ?? (scaleTouched || !!autoScaleFromPlotBoundary),
+          observed_count: Object.prototype.hasOwnProperty.call(prediction, "__observedCount") ? prediction.__observedCount : undefined,
+          area_sq_ft: Object.prototype.hasOwnProperty.call(prediction, "__areaSqFt") ? prediction.__areaSqFt : undefined,
+          measurement_method: prediction.__measurementMethod || undefined,
           remarks: predictionRemarks || undefined,
         }),
       });
@@ -1258,6 +1650,54 @@ function App() {
     }
   }
 
+  function selectPredictionForReview(prediction, options = {}) {
+    if (!prediction) return;
+    setSelectedPredictionId(prediction.id);
+    setCorrectedPredictionLabel(prediction.final_label_key || prediction.label_key || "");
+    const evidence = prediction?.metadata?.cad_text_evidence;
+    if (evidence) {
+      highlightCadTextFinding({
+        text: evidence.raw_text || prediction.label_name || prediction.label_key,
+        layer: evidence.cad_layer || prediction.cad_layer || "",
+        handle: evidence.cad_handle || null,
+        x: evidence.x,
+        y: evidence.y,
+        semantic_hints: [prediction.label_key].filter(Boolean),
+      }, options);
+      return;
+    }
+    if (prediction.cad_handle) {
+      const entity = cadEntitiesRef.current.find((row) => row.handle === prediction.cad_handle);
+      if (entity) {
+        selectEntityCandidate(candidateFromHandle(entity.handle, "prediction", 0));
+        zoomToEntity(entity);
+      }
+    }
+  }
+
+  async function reviewNativeSpaceSuggestion(prediction, suggestedLabel) {
+    if (!prediction) return;
+    const chosenLabel = nativeSuggestionCorrections[prediction.id] || suggestedLabel || prediction.label_key;
+    const row = nativeSpaceRows.find((item) => item.prediction?.id === prediction.id);
+    const suggestion = row?.suggestion;
+    const editedMeasurements = nativeSuggestionMeasurements[prediction.id] || {};
+    const proposedMeasurements = suggestion?.metadata?.measurement_suggestion || {};
+    const areaValue = editedMeasurements.area_sq_ft ?? proposedMeasurements.area_sq_ft;
+    const countValue = editedMeasurements.observed_count ?? proposedMeasurements.observed_count;
+    setSelectedPredictionId(prediction.id);
+    setCorrectedPredictionLabel(chosenLabel);
+    await reviewPrediction(chosenLabel === prediction.label_key ? "confirm" : "correct", {
+      ...prediction,
+      __correctedLabel: chosenLabel,
+      __labelName: suggestion?.instance_key,
+      __floor: suggestion?.floor,
+      __areaSqFt: areaValue === "" || areaValue == null ? null : Number(areaValue),
+      __observedCount: countValue === "" || countValue == null ? null : Number(countValue),
+      __measurementMethod: proposedMeasurements.method || "officer_entered",
+      __unitConfirmed: proposedMeasurements.unit_confirmed || editedMeasurements.area_sq_ft !== undefined,
+    });
+  }
+
   async function bulkConfirmPredictions() {
     if (!config.predictionBulkReviewUrl || predictionBusy) return;
     setPredictionBusy(true);
@@ -1273,6 +1713,31 @@ function App() {
       setStatusMessage(`Confirmed ${payload.reviewed || 0} high-confidence predictions. Measurements remain provisional until unit/scale is confirmed.`);
     } catch (error) {
       setStatusMessage(error.message || "Bulk review failed.");
+    } finally {
+      setPredictionBusy(false);
+    }
+  }
+
+  async function bulkConfirmNativeSpaces() {
+    if (!config.predictionBulkReviewUrl || predictionBusy) return;
+    const predictionIds = nativeSpaceRows
+      .map((row) => row.prediction)
+      .filter((prediction) => prediction && ["unreviewed", "ai_suggested", "uncertain"].includes(prediction.status))
+      .map((prediction) => prediction.id);
+    if (!predictionIds.length) return;
+    setPredictionBusy(true);
+    try {
+      const response = await fetch(config.predictionBulkReviewUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-TOKEN": config.csrfToken },
+        body: JSON.stringify({ action: "confirm", prediction_ids: predictionIds, unit_confirmed: false }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || `Bulk review failed (${response.status})`);
+      await Promise.all([loadTaggingWorkspace(), loadLabelsCatalog()]);
+      setStatusMessage(`Confirmed ${payload.reviewed || 0} native CAD text suggestions. Measurements remain provisional until unit/scale is confirmed.`);
+    } catch (error) {
+      setStatusMessage(error.message || "Native CAD text review failed.");
     } finally {
       setPredictionBusy(false);
     }
@@ -1423,24 +1888,26 @@ function App() {
     statsRef.current = { entities: 0, lines: 0, polylines: 0 };
   }
 
-function makeTextSprite(text, color = "#315b86") {
+function makeTextSprite(text, color = "#315b86", appearance = {}) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  const fontSize = 12;
-  const padding = 3;
+  const fontSize = Number(appearance.fontSize) || 12;
+  const padding = Number(appearance.padding) || 3;
   const readableText = String(text || "").trim().replace(/\s+/g, " ");
   const displayText = readableText.length > 42 ? `${readableText.slice(0, 39)}…` : readableText;
-  ctx.font = `500 ${fontSize}px Manrope, sans-serif`;
+  const fontWeight = appearance.fontWeight || 500;
+  ctx.font = `${fontWeight} ${fontSize}px Manrope, sans-serif`;
   const width = Math.min(320, Math.max(30, Math.ceil(ctx.measureText(displayText).width) + (padding * 2)));
   const height = fontSize + (padding * 2);
     canvas.width = width;
     canvas.height = height;
     ctx.clearRect(0, 0, width, height);
-    ctx.font = `500 ${fontSize}px Manrope, sans-serif`;
-  ctx.fillStyle = "rgba(255,255,255,0.68)";
+    ctx.font = `${fontWeight} ${fontSize}px Manrope, sans-serif`;
+  ctx.fillStyle = appearance.background || "rgba(255,255,255,0.68)";
   ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = "rgba(49,91,134,0.12)";
+  ctx.strokeStyle = appearance.border || "rgba(49,91,134,0.12)";
+  ctx.lineWidth = Number(appearance.borderWidth) || 1;
   ctx.strokeRect(0, 0, width, height);
     ctx.fillStyle = color;
     ctx.textBaseline = "middle";
@@ -1463,7 +1930,14 @@ function makeTextSprite(text, color = "#315b86") {
     const textHeight = worldPerPixel * 15;
     for (const sprite of textOverlayObjectsRef.current) {
       const aspect = Number(sprite.userData?.textAspect) || 2;
-      sprite.scale.set(aspect * textHeight, textHeight, 1);
+      const height = sprite.userData?.isNativeSpaceSuggestion ? worldPerPixel * 19 : textHeight;
+      sprite.scale.set(aspect * height, height, 1);
+    }
+    for (const sprite of selectedEntityOverlaysRef.current) {
+      if (!sprite.userData?.isCadTextHighlight) continue;
+      const aspect = Number(sprite.userData?.textAspect) || 2;
+      const highlightHeight = worldPerPixel * 26;
+      sprite.scale.set(aspect * highlightHeight, highlightHeight, 1);
     }
   }
 
@@ -1501,23 +1975,47 @@ function makeTextSprite(text, color = "#315b86") {
       .map((item) => ({ ...item, __score: cadTextScore(item.text) }))
       .filter((item) => item.__score >= 2)
       .sort((a, b) => b.__score - a.__score || String(a.text).length - String(b.text).length);
+    const indexedSpaces = new Map(
+      buildNativeSpacePredictions(rows, cadEntitiesRef.current, floorContext, scaleMultiplier, scaleTouched || !!autoScaleFromPlotBoundary)
+        .map((suggestion) => [nativeTextEvidenceIdentity(suggestion.finding), suggestion])
+    );
     let count = 0;
     for (const item of weightedRows) {
       if (count >= limit) break;
       const normText = String(item.text || "").toLowerCase().replace(/\s+/g, " ").trim();
-      if (dedupe.has(normText)) continue;
       const gx = Math.floor(Number(item.x) / cell);
       const gy = Math.floor(Number(item.y) / cell);
       const bucket = `${gx}:${gy}`;
+      const detectedSpace = indexedSpaces.get(nativeTextEvidenceIdentity(item));
+      const visualState = detectedSpace
+        ? nativeSuggestionVisualStateRef.current.get(nativeTextEvidenceIdentity(detectedSpace.finding))
+        : null;
+      const isMarked = !!visualState?.marked;
+      const dedupeKey = detectedSpace ? detectedSpace.source_key : normText;
+      if (dedupe.has(dedupeKey)) continue;
       if (occupied.has(bucket)) continue;
-      const sprite = makeTextSprite(item.text);
+      const sprite = detectedSpace
+        ? makeTextSprite(
+          `${detectedSpace.instance_key} • ${item.text}`,
+          isMarked ? "#075f54" : "#6b4f00",
+          {
+            background: isMarked ? "rgba(214, 250, 237, 0.94)" : "rgba(255, 244, 176, 0.96)",
+            border: isMarked ? "rgba(15, 107, 95, 0.9)" : "rgba(202, 138, 4, 0.95)",
+            borderWidth: 2,
+            fontWeight: 800,
+            padding: 5,
+          }
+        )
+        : makeTextSprite(item.text);
       if (!sprite) continue;
       sprite.position.set(Number(item.x), Number(item.y), 5);
       sprite.visible = true;
+      sprite.userData.isNativeSpaceSuggestion = !!detectedSpace;
+      sprite.userData.nativeSpaceSourceKey = detectedSpace?.source_key || "";
       overlayGroup.add(sprite);
       textOverlayObjectsRef.current.push(sprite);
       occupied.add(bucket);
-      dedupe.add(normText);
+      dedupe.add(dedupeKey);
       count += 1;
     }
     resizeCadTextOverlays();
@@ -1658,16 +2156,43 @@ function makeTextSprite(text, color = "#315b86") {
     render();
   }
 
-  function useAiTextFinding(finding) {
+  function highlightCadTextFinding(finding, options = {}) {
     if (!finding) return;
-    const matchedEntity = cadEntitiesRef.current.find((entity) =>
-      (finding.handle && entity.handle === finding.handle)
-      || (entity.text_content && normalizeDxfText(entity.text_content) === normalizeDxfText(finding.text))
-    );
-    if (matchedEntity) {
+    const preserveDrawing = !!options.preserveDrawing;
+    const findingX = finiteCadCoordinate(finding.x);
+    const findingY = finiteCadCoordinate(finding.y);
+    const findingHandle = String(finding.handle || "");
+    const normalizedText = normalizeDxfText(finding.text);
+    const normalizedLayer = String(finding.layer || "").toLowerCase();
+    const textMatches = cadEntitiesRef.current.filter((entity) => (
+      entity.text_content && normalizeDxfText(entity.text_content) === normalizedText
+    ));
+    const matchedEntity = cadEntitiesRef.current.find((entity) => (
+      findingHandle && String(entity.handle || "") === findingHandle
+    )) || textMatches.find((entity) => (
+      normalizedLayer && String(entity.layer_name || "").toLowerCase() === normalizedLayer
+    )) || textMatches.sort((a, b) => {
+      if (!Number.isFinite(findingX) || !Number.isFinite(findingY)) return 0;
+      const aBounds = entityBounds(a);
+      const bBounds = entityBounds(b);
+      const distance = (bounds) => bounds
+        ? Math.hypot(((bounds.minX + bounds.maxX) / 2) - findingX, ((bounds.minY + bounds.maxY) / 2) - findingY)
+        : Infinity;
+      return distance(aBounds) - distance(bBounds);
+    })[0];
+    if (preserveDrawing) {
+      setPickCandidates(null);
+      setSelectedEntityHandle("");
+      setSelectedEntityHandles([]);
+      clearLayerSelection();
+      setLearningSourceText(null);
+      setLearningRegionPoints([]);
+      setStatusMessage("CAD suggestion selected. Confirm, change, or reject it in the right panel.");
+      return;
+    } else if (matchedEntity) {
       selectEntityCandidate(candidateFromHandle(matchedEntity.handle, "ai-text-report", 0));
       zoomToEntity(matchedEntity);
-    } else if (Number.isFinite(finding.x) && Number.isFinite(finding.y)) {
+    } else if (Number.isFinite(findingX) && Number.isFinite(findingY)) {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       if (camera && controls) {
@@ -1675,9 +2200,9 @@ function makeTextSprite(text, color = "#315b86") {
         const aspect = lastSizeRef.current.h ? lastSizeRef.current.w / lastSizeRef.current.h : 1;
         camera.left = -(visibleHeight * aspect) / 2; camera.right = (visibleHeight * aspect) / 2;
         camera.top = visibleHeight / 2; camera.bottom = -visibleHeight / 2;
-        camera.position.set(finding.x, finding.y, camera.position.z);
+        camera.position.set(findingX, findingY, camera.position.z);
         camera.updateProjectionMatrix();
-        controls.target.set(finding.x, finding.y, 0); controls.update(); render();
+        controls.target.set(findingX, findingY, 0); controls.update(); render();
       }
     }
     const suggestedLabel = finding.semantic_hints?.[0];
@@ -1691,8 +2216,10 @@ function makeTextSprite(text, color = "#315b86") {
       setLearningUnit("ft");
     }
     setLearningSourceText(finding);
-    setLearningNotes(`AI read from CAD text: "${finding.text}". Officer verification: `);
-    setStatusMessage("AI text finding selected. Verify it on the drawing, capture the region, and complete the officer note.");
+    setLearningNotes(`CAD text evidence: "${finding.text}". Officer verification: `);
+    setStatusMessage(preserveDrawing
+      ? "CAD suggestion highlighted without changing the drawing view. Confirm, change, or reject it in the right panel."
+      : "CAD text highlighted. Verify it on the drawing, capture the region, and complete the officer note.");
   }
 
   function resetView() {
@@ -1761,9 +2288,14 @@ function makeTextSprite(text, color = "#315b86") {
     };
 
     const beginShiftPan = (event) => {
-      if (event.button !== 1 || drawingModeRef.current !== "select" || measureModeRef.current) {
+      const shiftLeftDrag = event.button === 0 && event.shiftKey;
+      const middleDrag = event.button === 1;
+      if ((!shiftLeftDrag && !middleDrag) || drawingModeRef.current !== "select" || measureModeRef.current) {
         return false;
       }
+      event.preventDefault();
+      event.stopPropagation();
+      setPickCandidates(null);
       shiftPanRef.current = {
         startX: event.clientX,
         startY: event.clientY,
@@ -1783,6 +2315,8 @@ function makeTextSprite(text, color = "#315b86") {
     const updateShiftPan = (event) => {
       const pan = shiftPanRef.current;
       if (!pan) return false;
+      event.preventDefault();
+      event.stopPropagation();
       const rect = canvas.getBoundingClientRect();
       if (!rect.width || !rect.height) return false;
       const cameraWidth = (camera.right - camera.left) / camera.zoom;
@@ -1800,8 +2334,15 @@ function makeTextSprite(text, color = "#315b86") {
       return true;
     };
 
-    const endShiftPan = () => {
+    const endShiftPan = (event) => {
       if (!shiftPanRef.current) return;
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      try {
+        canvas.releasePointerCapture?.(event?.pointerId);
+      } catch {
+        // ignore pointer capture failures
+      }
       shiftPanRef.current = null;
       canvas.style.cursor = "";
     };
@@ -1878,6 +2419,16 @@ function makeTextSprite(text, color = "#315b86") {
       const x = ((event.clientX - left) / width) * 2 - 1;
       const y = -((event.clientY - top) / height) * 2 + 1;
       raycaster.setFromCamera({ x, y }, camera);
+      const nativeSuggestionHit = raycaster
+        .intersectObjects(textOverlayObjectsRef.current.filter((object) => object.userData?.nativeSpaceSourceKey), true)
+        .find((hit) => hit.object?.userData?.nativeSpaceSourceKey);
+      if (nativeSuggestionHit) {
+        event.preventDefault();
+        event.stopPropagation();
+        setPickCandidates(null);
+        nativeSuggestionActionRef.current?.(nativeSuggestionHit.object.userData.nativeSpaceSourceKey);
+        return;
+      }
       const pickables = pickableObjectsRef.current.length
         ? pickableObjectsRef.current
         : Object.values(entityObjectsRef.current || {});
@@ -1898,7 +2449,7 @@ function makeTextSprite(text, color = "#315b86") {
           return;
         }
         if (cadCandidates.length) {
-          selectEntityCandidate(cadCandidates[0], { additive: event.shiftKey || event.ctrlKey || event.metaKey });
+          selectEntityCandidate(cadCandidates[0], { additive: event.ctrlKey || event.metaKey });
           return;
         }
         const markingHit = resolvedHits.find(({ meta }) => meta.expertMarkingId);
@@ -1916,7 +2467,7 @@ function makeTextSprite(text, color = "#315b86") {
         const pickedHandle = meta.handle || "";
         const layer = meta.layer || "";
         if (pickedHandle) {
-          selectEntityCandidate(candidateFromHandle(pickedHandle, "raycast", 0), { additive: event.shiftKey || event.ctrlKey || event.metaKey });
+          selectEntityCandidate(candidateFromHandle(pickedHandle, "raycast", 0), { additive: event.ctrlKey || event.metaKey });
         }
         if (layer) {
           selectLayer(layer);
@@ -1932,7 +2483,7 @@ function makeTextSprite(text, color = "#315b86") {
           return;
         }
         if (geometryCandidates.length) {
-          selectEntityCandidate(geometryCandidates[0], { additive: event.shiftKey || event.ctrlKey || event.metaKey });
+          selectEntityCandidate(geometryCandidates[0], { additive: event.ctrlKey || event.metaKey });
           return;
         }
         setPickCandidates(null);
@@ -1960,8 +2511,8 @@ function makeTextSprite(text, color = "#315b86") {
       updateDrawingCursor(worldPoint);
     };
 
-    const onPointerUp = () => {
-      endShiftPan();
+    const onPointerUp = (event) => {
+      endShiftPan(event);
     };
 
     const onDblClick = () => {
@@ -4103,6 +4654,145 @@ function makeTextSprite(text, color = "#315b86") {
       .slice(0, 8);
   }, [selectedLayer, selectedLayers, selectedLayerSet, layerMeta, textEntities, tagOptions]);
   const cadTextMeasurements = useMemo(() => extractCadTextMeasurements(textEntities), [textEntities]);
+  const nativeTextSuggestions = useMemo(
+    () => buildNativeSpacePredictions(
+      textEntities,
+      cadEntities,
+      floorContext,
+      scaleMultiplier,
+      scaleTouched || !!autoScaleFromPlotBoundary
+    ).slice(0, 200),
+    [autoScaleFromPlotBoundary, cadEntities, floorContext, scaleMultiplier, scaleTouched, textEntities]
+  );
+  const nativeCorrectionOptions = useMemo(() => {
+    const options = new Map(tagOptions.filter((option) => option.value).map((option) => [option.value, option]));
+    for (const label of labelsCatalog) {
+      if (!label?.label_key || options.has(label.label_key)) continue;
+      options.set(label.label_key, { value: label.label_key, label: label.label_name || humanizeTagValue(label.label_key) });
+    }
+    return Array.from(options.values());
+  }, [labelsCatalog, tagOptions]);
+  const nativePredictionsBySourceKey = useMemo(() => {
+    const rows = new Map();
+    for (const prediction of taggingWorkspace.predictions || []) {
+      const sourceKey = prediction?.metadata?.source_key;
+      if (prediction?.metadata?.source === "native_cad_text" && sourceKey) {
+        rows.set(sourceKey, prediction);
+      }
+    }
+    return rows;
+  }, [taggingWorkspace.predictions]);
+  const nativePredictionsByEvidence = useMemo(() => {
+    const rows = new Map();
+    for (const prediction of taggingWorkspace.predictions || []) {
+      const evidence = prediction?.metadata?.cad_text_evidence;
+      if (prediction?.metadata?.source !== "native_cad_text" || !evidence) continue;
+      const identity = nativeTextEvidenceIdentity({
+        handle: evidence.cad_handle || prediction.cad_handle,
+        layer: evidence.cad_layer || prediction.cad_layer,
+        text: evidence.raw_text,
+        x: evidence.x,
+        y: evidence.y,
+      });
+      if (identity) rows.set(identity, prediction);
+    }
+    return rows;
+  }, [taggingWorkspace.predictions]);
+  const nativeSpaceRows = useMemo(() => nativeTextSuggestions.map((suggestion) => ({
+    suggestion,
+    prediction: nativePredictionsBySourceKey.get(suggestion.source_key)
+      || nativePredictionsByEvidence.get(nativeTextEvidenceIdentity(suggestion.finding))
+      || null,
+  })), [nativePredictionsByEvidence, nativePredictionsBySourceKey, nativeTextSuggestions]);
+
+  useEffect(() => {
+    const visualStates = new Map();
+    for (const { suggestion, prediction } of nativeSpaceRows) {
+      const classifierMismatch = !!prediction && (
+        (prediction.final_label_key || prediction.label_key) !== suggestion.label_key
+        || prediction.floor !== suggestion.floor
+        || prediction.label_name !== suggestion.instance_key
+      );
+      visualStates.set(nativeTextEvidenceIdentity(suggestion.finding), {
+        marked: !!prediction
+          && ["confirmed", "corrected", "verified"].includes(prediction.status)
+          && !classifierMismatch,
+      });
+    }
+    nativeSuggestionVisualStateRef.current = visualStates;
+    renderCadTextOverlays(textEntities);
+    // Repaint the existing marker when its review status changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeSpaceRows, textEntities]);
+
+  useEffect(() => {
+    nativeSuggestionActionRef.current = (sourceKey) => {
+      const row = nativeSpaceRows.find((item) => item.suggestion.source_key === sourceKey);
+      if (!row) return;
+      setFocusedNativeSourceKey(sourceKey);
+      if (row.prediction) selectPredictionForReview(row.prediction, { preserveDrawing: true });
+      else highlightCadTextFinding(row.suggestion.finding, { preserveDrawing: true });
+      requestAnimationFrame(() => {
+        const node = nativeSuggestionRowRefs.current[sourceKey];
+        node?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+        node?.focus?.({ preventScroll: true });
+      });
+      setStatusMessage(`${row.suggestion.instance_key} selected. Confirm, change, or reject it in the right panel.`);
+    };
+    return () => {
+      nativeSuggestionActionRef.current = null;
+    };
+    // The current rows contain the matching prediction and native text evidence.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeSpaceRows]);
+
+  useEffect(() => {
+    if (!config.predictionImportUrl || nativeTextSuggestions.length === 0) return undefined;
+    const predictions = nativeTextSuggestions.map((suggestion) => ({
+      label_key: suggestion.label_key,
+      label_name: suggestion.label_name,
+      confidence: suggestion.confidence,
+      geometry: suggestion.geometry,
+      model_version: suggestion.model_version,
+      cad_handle: suggestion.cad_handle,
+      cad_layer: suggestion.cad_layer,
+      floor: suggestion.floor,
+      metadata: suggestion.metadata,
+    }));
+    const hash = JSON.stringify(predictions);
+    if (hash === nativePredictionSyncRef.current) return undefined;
+    nativePredictionSyncRef.current = hash;
+    let cancelled = false;
+
+    const timer = setTimeout(async () => {
+      setNativePredictionSyncing(true);
+      try {
+        const response = await fetch(config.predictionImportUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-TOKEN": config.csrfToken },
+          body: JSON.stringify({ predictions }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || `Native text suggestion import failed (${response.status})`);
+        if (!cancelled) {
+          await Promise.all([loadTaggingWorkspace(), loadLabelsCatalog()]);
+          setStatusMessage(`Found ${nativeTextSuggestions.length} space labels from native CAD text. Review or correct them in the panel.`);
+        }
+      } catch (error) {
+        nativePredictionSyncRef.current = "";
+        if (!cancelled) setStatusMessage(error.message || "Could not create suggestions from native CAD text.");
+      } finally {
+        if (!cancelled) setNativePredictionSyncing(false);
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // The URL and extracted suggestions fully describe this idempotent sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.predictionImportUrl, nativeTextSuggestions]);
   const activeLabelTextReferences = useMemo(() => {
     if (!activeLabelKey) return [];
     const label = String(activeLabelKey).toLowerCase();
@@ -4394,6 +5084,7 @@ function makeTextSprite(text, color = "#315b86") {
     for (const obj of selectedEntityOverlaysRef.current) {
       scene.remove(obj);
       obj.geometry?.dispose?.();
+      obj.material?.map?.dispose?.();
       obj.material?.dispose?.();
     }
     selectedEntityOverlaysRef.current = [];
@@ -4452,8 +5143,51 @@ function makeTextSprite(text, color = "#315b86") {
       }
     }
 
+    if (learningSourceText) {
+      const sourceHandle = String(learningSourceText.handle || "");
+      const sourceText = normalizeDxfText(learningSourceText.text);
+      const sourceLayer = String(learningSourceText.layer || "").toLowerCase();
+      const sourceEntity = cadEntities.find((entity) => (
+        sourceHandle && String(entity.handle || "") === sourceHandle
+      )) || cadEntities.find((entity) => (
+        sourceText
+        && normalizeDxfText(entity.text_content) === sourceText
+        && (!sourceLayer || String(entity.layer_name || "").toLowerCase() === sourceLayer)
+      ));
+      const sourceBounds = sourceEntity ? entityBounds(sourceEntity) : null;
+      const sourceX = finiteCadCoordinate(learningSourceText.x);
+      const sourceY = finiteCadCoordinate(learningSourceText.y);
+      const x = Number.isFinite(sourceX)
+        ? sourceX
+        : (sourceBounds ? (sourceBounds.minX + sourceBounds.maxX) / 2 : null);
+      const y = Number.isFinite(sourceY)
+        ? sourceY
+        : (sourceBounds ? (sourceBounds.minY + sourceBounds.maxY) / 2 : null);
+
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        const highlight = makeTextSprite(
+          `SELECTED TEXT • ${learningSourceText.text}`,
+          "#6b2600",
+          {
+            background: "rgba(255, 232, 92, 0.96)",
+            border: "rgba(198, 40, 40, 1)",
+            borderWidth: 2,
+            fontWeight: 800,
+            padding: 5,
+          }
+        );
+        if (highlight) {
+          highlight.position.set(x, y, 12);
+          highlight.renderOrder = 1200;
+          highlight.userData.isCadTextHighlight = true;
+          scene.add(highlight);
+          selectedEntityOverlaysRef.current.push(highlight);
+        }
+      }
+    }
+
     render();
-  }, [selectedCadEntities]);
+  }, [cadEntities, learningSourceText, selectedCadEntities]);
   const flowStatus = useMemo(() => {
     const hasUpload = !!config.submissionId;
     const hasDxf = !!config.hasDxf;
@@ -4557,6 +5291,9 @@ function makeTextSprite(text, color = "#315b86") {
       const refreshedLayerMap = normalizePersistedLayerMap(result.layer_map || nextLayerMeta);
       setLayerMeta(refreshedLayerMap);
       layerMetaRef.current = refreshedLayerMap;
+      if (result.identification_report) {
+        setLayerIdentificationReport(result.identification_report);
+      }
       setQuickMarkTag(tag);
       const label = resolveTagLabel(tag, tagOptions, suggestedOfficialMappings);
       const message = result.message || `Mapped ${layerNames.join(", ")} as ${label}.`;
@@ -4759,8 +5496,8 @@ function makeTextSprite(text, color = "#315b86") {
                     entityType: entity.entity_type,
                     source: "panel",
                     score: 0,
-                  }, { additive: event.shiftKey || event.ctrlKey || event.metaKey });
-                  if (entity.layer_name) selectLayer(entity.layer_name, { additive: event.shiftKey || event.ctrlKey || event.metaKey });
+                  }, { additive: event.ctrlKey || event.metaKey });
+                  if (entity.layer_name) selectLayer(entity.layer_name, { additive: event.ctrlKey || event.metaKey });
                 }}
                 onDoubleClick={() => zoomToEntity(entity)}
                 style={{
@@ -5009,6 +5746,34 @@ function makeTextSprite(text, color = "#315b86") {
           </div>
         ) : null}
 
+        <div className="card" style={{ border: "1px solid #b9dfd7", borderRadius: 10, padding: 10, marginBottom: 10, background: "#f3fbf9" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontWeight: 700 }}>Updated AI object identification</div>
+            <span className="pill">{Number(layerIdentificationReport.object_count || 0)} identified</span>
+          </div>
+          <div className="muted" style={{ marginBottom: 8 }}>
+            This report updates after the officer applies a layer mark. Confirmed mappings are captured as expert training labels; model retraining remains a separate governed step.
+          </div>
+          {(layerIdentificationReport.objects || []).length ? (
+            <div style={{ maxHeight: 220, overflow: "auto", border: "1px solid #d9ebe7", borderRadius: 8, background: "#fff" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead><tr style={{ background: "#edf8f5" }}><th style={{ textAlign: "left", padding: 7 }}>CAD layer</th><th style={{ textAlign: "left", padding: 7 }}>Identified object</th><th style={{ textAlign: "left", padding: 7 }}>Status</th></tr></thead>
+                <tbody>
+                  {(layerIdentificationReport.objects || []).map((row) => (
+                    <tr key={`${row.cad_layer}-${row.object_key}`}>
+                      <td style={{ padding: 7, borderTop: "1px solid #edf1f0" }}>{row.cad_layer}</td>
+                      <td style={{ padding: 7, borderTop: "1px solid #edf1f0", fontWeight: 700 }}>{row.object_name || row.object_key}</td>
+                      <td style={{ padding: 7, borderTop: "1px solid #edf1f0" }}>Officer verified / training saved</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="muted">No officer-verified object identifications have been saved yet.</div>
+          )}
+        </div>
+
         <form method="POST" action={config.storeUrl}>
           <input type="hidden" name="_token" value={config.csrfToken} />
           <input type="hidden" name="layer_map_json" value={layerMapJson} readOnly />
@@ -5091,7 +5856,7 @@ function makeTextSprite(text, color = "#315b86") {
                     delete layerRowRefs.current[name];
                   }
                 }}
-                onClick={(event) => selectLayer(name, { additive: event.ctrlKey || event.metaKey || event.shiftKey })}
+                onClick={(event) => selectLayer(name, { additive: event.ctrlKey || event.metaKey })}
                 style={{
                   borderLeft: selectedRuleRelatedLayers.includes(name) ? "3px solid #0b3d91" : undefined,
                   paddingLeft: selectedRuleRelatedLayers.includes(name) ? 10 : undefined,
@@ -5312,10 +6077,25 @@ function makeTextSprite(text, color = "#315b86") {
             />
             <div style={{ marginTop: 8, maxHeight: 220, overflow: "auto", borderTop: "1px dashed #eee", paddingTop: 6 }}>
               {filteredText.length ? filteredText.map((item, idx) => (
-                <div key={`${item.layer}-${idx}`} style={{ marginBottom: 8 }}>
+                <button
+                  key={`${item.layer}-${item.handle || idx}`}
+                  type="button"
+                  onClick={() => highlightCadTextFinding({ ...item, semantic_hints: [] })}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    marginBottom: 8,
+                    padding: 7,
+                    textAlign: "left",
+                    border: "1px solid #e0e7ef",
+                    borderRadius: 7,
+                    background: learningSourceText?.handle === item.handle && learningSourceText?.text === item.text ? "#fff3a6" : "#fff",
+                  }}
+                  title="Locate and highlight this text in the CAD view"
+                >
                   <div style={{ fontSize: 13 }}>{item.text}</div>
                   <div className="muted">Layer: {item.layer}</div>
-                </div>
+                </button>
               )) : (
                 <div className="muted">
                   {selectedLayer ? "No textual elements matched the current selection." : "No text entities found."}
@@ -5557,7 +6337,7 @@ function makeTextSprite(text, color = "#315b86") {
           {floorContext ? <span className="pill">{humanFloorContext(floorContext)}</span> : null}
           {!showAdvancedReviewTools ? (
             <>
-              <strong style={{ color: "#0f6b5f" }}>Click a CAD item; Shift+click adds more</strong>
+              <strong style={{ color: "#0f6b5f" }}>Click selects · Ctrl/Cmd+click adds more · Shift+drag moves the view</strong>
               <button type="button" onClick={() => { setDrawingMode(drawingMode === "rectangle" ? "select" : "rectangle"); clearCurrentDrawing(); }} style={{ fontWeight: drawingMode === "rectangle" ? 800 : 500 }}>
                 {drawingMode === "rectangle" ? "Drawing region…" : "Draw region"}
               </button>
@@ -5770,19 +6550,163 @@ function makeTextSprite(text, color = "#315b86") {
         </div>
         <div className={`cad-details-panel${showAdvancedReviewTools ? "" : " officer-simple"}`}>
           <div className="officer-workflow">
+            <div className="card" style={{ border: "2px solid #0f6b5f", borderRadius: 12, padding: 12, marginBottom: 10, background: "#f4fffa" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>Auto-detected spaces</div>
+                  <div className="muted">Native CAD room text is pre-marked. Locate, confirm, correct, or reject each suggestion.</div>
+                </div>
+                <span className="pill">{nativeTextSuggestions.length} found</span>
+              </div>
+              {nativePredictionSyncing ? <div style={{ marginTop: 8, color: "#0f6b5f", fontWeight: 700 }}>Preparing suggestions…</div> : null}
+              {nativeSpaceRows.length ? (
+                <>
+                  <div style={{ maxHeight: 300, overflow: "auto", display: "grid", gap: 7, marginTop: 10 }}>
+                    {nativeSpaceRows.map(({ suggestion, prediction }) => {
+                      const status = prediction?.status || "preparing";
+                      const classifierMismatch = !!prediction && (
+                        (prediction.final_label_key || prediction.label_key) !== suggestion.label_key
+                        || prediction.floor !== suggestion.floor
+                        || prediction.label_name !== suggestion.instance_key
+                      );
+                      const reviewable = !!prediction && status !== "verified";
+                      const selectedLabel = nativeSuggestionCorrections[prediction?.id]
+                        || (classifierMismatch ? suggestion.label_key : null)
+                        || prediction?.final_label_key
+                        || prediction?.label_key
+                        || suggestion.label_key;
+                      const proposedMeasurement = suggestion.metadata?.measurement_suggestion || {};
+                      const editedMeasurement = nativeSuggestionMeasurements[prediction?.id] || {};
+                      const savedMeasurement = prediction?.metadata?.reviewed_measurements || {};
+                      const areaValue = editedMeasurement.area_sq_ft
+                        ?? savedMeasurement.area_sq_ft
+                        ?? prediction?.tag?.area_sq_ft
+                        ?? proposedMeasurement.area_sq_ft
+                        ?? "";
+                      const countValue = editedMeasurement.observed_count
+                        ?? savedMeasurement.observed_count
+                        ?? prediction?.tag?.attributes?.observed_count
+                        ?? proposedMeasurement.observed_count
+                        ?? "";
+                      const isStairSuggestion = suggestion.label_key === "staircase";
+                      const acceptsArea = !["rear_building_line", "front_building_line", "side_building_line"].includes(suggestion.label_key);
+                      return (
+                        <div
+                          key={suggestion.source_key}
+                          ref={(node) => {
+                            if (node) nativeSuggestionRowRefs.current[suggestion.source_key] = node;
+                            else delete nativeSuggestionRowRefs.current[suggestion.source_key];
+                          }}
+                          tabIndex={-1}
+                          style={{
+                            border: focusedNativeSourceKey === suggestion.source_key ? "2px solid #0f6b5f" : "1px solid #b9d7cf",
+                            borderRadius: 9,
+                            padding: 8,
+                            background: focusedNativeSourceKey === suggestion.source_key ? "#e7fff4" : "#fff",
+                            outline: "none",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => nativeSuggestionActionRef.current?.(suggestion.source_key)}
+                            style={{ display: "block", width: "100%", padding: 0, border: 0, background: "transparent", textAlign: "left", cursor: "pointer" }}
+                            title="Locate this native text marker in the CAD drawing"
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+                              <strong>{suggestion.instance_key}</strong>
+                              <span style={{ color: classifierMismatch ? "#b45309" : status === "confirmed" || status === "corrected" || status === "verified" ? "#0f6b5f" : "#805b00", fontSize: 12, fontWeight: 700 }}>{classifierMismatch ? "Needs correction" : humanizeTagValue(status)}</span>
+                            </div>
+                            <div>{suggestion.finding.text}</div>
+                            <div className="muted">{humanFloorContext(suggestion.floor)} · {suggestion.finding.layer || "Unknown layer"} · {Math.round(Number(suggestion.confidence) * 100)}% · click to locate</div>
+                          </button>
+                          {isStairSuggestion || acceptsArea ? (
+                            <div style={{ display: "grid", gridTemplateColumns: isStairSuggestion ? "1fr 1fr" : "1fr", gap: 6, marginTop: 7, padding: 7, borderRadius: 7, background: "#fff9dc" }}>
+                              {isStairSuggestion ? (
+                                <label className="muted">
+                                  Stair/riser count
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={countValue}
+                                    disabled={!reviewable || predictionBusy}
+                                    onChange={(event) => prediction && setNativeSuggestionMeasurements((current) => ({
+                                      ...current,
+                                      [prediction.id]: { ...(current[prediction.id] || {}), observed_count: event.target.value },
+                                    }))}
+                                    placeholder="4 or more parallel lines"
+                                    style={{ width: "100%", marginTop: 3 }}
+                                  />
+                                </label>
+                              ) : null}
+                              {acceptsArea ? (
+                                <label className="muted">
+                                  Area (sq ft)
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={areaValue}
+                                    disabled={!reviewable || predictionBusy}
+                                    onChange={(event) => prediction && setNativeSuggestionMeasurements((current) => ({
+                                      ...current,
+                                      [prediction.id]: { ...(current[prediction.id] || {}), area_sq_ft: event.target.value },
+                                    }))}
+                                    placeholder="Calculated or enter area"
+                                    style={{ width: "100%", marginTop: 3 }}
+                                  />
+                                </label>
+                              ) : null}
+                              <div className="muted" style={{ gridColumn: "1 / -1", fontSize: 11 }}>
+                                {proposedMeasurement.method === "repeated_parallel_lines"
+                                  ? `${proposedMeasurement.observed_count} repeating parallel lines detected${proposedMeasurement.unit_confirmed ? "" : "; area remains provisional until scale is confirmed"}.`
+                                  : proposedMeasurement.method === "native_text_dimensions"
+                                    ? `Calculated from ${proposedMeasurement.width_ft} ft × ${proposedMeasurement.length_ft} ft found in CAD text.`
+                                    : isStairSuggestion
+                                      ? "No reliable 4+ parallel-line stair pattern found; enter the count and area for learning."
+                                      : "No reliable dimension pair found; enter the room area for learning."}
+                              </div>
+                            </div>
+                          ) : null}
+                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", gap: 6, marginTop: 7 }}>
+                            <select
+                              value={selectedLabel}
+                              disabled={!reviewable || predictionBusy}
+                              onChange={(event) => {
+                                if (!prediction) return;
+                                setNativeSuggestionCorrections((current) => ({ ...current, [prediction.id]: event.target.value }));
+                              }}
+                              aria-label={`Label for ${suggestion.finding.text}`}
+                            >
+                              {nativeCorrectionOptions.map((option) => <option key={`${suggestion.source_key}-${option.value}`} value={option.value}>{option.label}</option>)}
+                            </select>
+                            <button type="button" disabled={!reviewable || predictionBusy} onClick={() => reviewNativeSpaceSuggestion(prediction, suggestion.label_key)} style={{ fontWeight: 700 }}>{classifierMismatch ? "Correct" : "Confirm"}</button>
+                            <button type="button" disabled={!reviewable || predictionBusy} onClick={() => reviewPrediction("reject", prediction)}>Reject</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button type="button" onClick={bulkConfirmNativeSpaces} disabled={predictionBusy || nativePredictionSyncing || !nativeSpaceRows.some((row) => row.prediction && ["unreviewed", "ai_suggested", "uncertain"].includes(row.prediction.status))} style={{ width: "100%", marginTop: 9, background: "#0f6b5f", color: "#fff", fontWeight: 800 }}>
+                    Confirm all remaining text suggestions
+                  </button>
+                  <div className="muted" style={{ marginTop: 6 }}>Confirmation is still required before these suggestions can become verified training data.</div>
+                </>
+              ) : <div className="muted" style={{ marginTop: 8 }}>No room-name clues were found in native CAD text.</div>}
+            </div>
             <div className="card" style={{ border: "2px solid #0f6b5f", borderRadius: 12, padding: 14, marginBottom: 10, background: "#f7fffc" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                 <div><div style={{ fontWeight: 800, fontSize: 18 }}>Add a CAD learning example</div><div className="muted">Select → capture PNG → describe → save.</div></div>
                 <button type="button" onClick={() => setShowAdvancedReviewTools((value) => !value)}>{showAdvancedReviewTools ? "Simple view" : "Advanced tools"}</button>
               </div>
               <ol style={{ margin: "12px 0", paddingLeft: 20, fontSize: 13 }}>
-                <li>Select one or more CAD entities on the drawing using click or Shift+click.</li>
+                <li>Select CAD entities using click or Ctrl/Cmd+click. Use Shift+drag to move the drawing.</li>
                 <li>Choose what the region represents and capture it.</li>
                 <li>Add the observed fact, rule result, and officer note.</li>
               </ol>
               <div style={{ padding: 9, borderRadius: 8, background: selectedEntityHandles.length ? "#e9f8f1" : "#fff8df", marginBottom: 10 }}>
                 <strong>{selectedEntityHandles.length} CAD {selectedEntityHandles.length === 1 ? "entity" : "entities"} selected</strong>
-                <div className="muted">{selectedEntityHandles.length ? selectedEntityHandles.slice(0, 8).join(", ") : "Click an entity on the drawing. Hold Shift to add more."}</div>
+                <div className="muted">{selectedEntityHandles.length ? selectedEntityHandles.slice(0, 8).join(", ") : "Click an entity. Use Ctrl/Cmd+click to add more, or Shift+drag to move the view."}</div>
               </div>
               <label className="muted">This region is</label>
               <select value={learningLabel} onChange={(event) => { setLearningLabel(event.target.value); selectActiveLabel(event.target.value); }} style={{ width: "100%", marginTop: 4, marginBottom: 8 }}>
@@ -5826,7 +6750,7 @@ function makeTextSprite(text, color = "#315b86") {
               <div style={{ fontWeight: 700, marginTop: 10, marginBottom: 5 }}>Click a finding to locate and verify it</div>
               <div style={{ maxHeight: 210, overflow: "auto", display: "grid", gap: 5 }}>
                 {aiTextFindings.map((finding, index) => (
-                  <button key={`ai-text-finding-${index}`} type="button" onClick={() => useAiTextFinding(finding)} style={{ textAlign: "left", padding: 7, border: "1px solid #e0e7ef", borderRadius: 7, background: learningSourceText?.text === finding.text ? "#e8f5ff" : "#fff" }}>
+                  <button key={`ai-text-finding-${index}`} type="button" onClick={() => highlightCadTextFinding(finding)} style={{ textAlign: "left", padding: 7, border: "1px solid #e0e7ef", borderRadius: 7, background: learningSourceText?.text === finding.text ? "#e8f5ff" : "#fff" }}>
                     <div style={{ fontWeight: 600 }}>{finding.text}</div>
                     <div className="muted">{finding.layer || "Unknown layer"}{finding.value_ft != null ? ` · ${finding.value_ft} ft` : ""}{finding.semantic_hints.length ? ` · ${finding.semantic_hints.map(humanizeTagValue).join(", ")}` : ""}</div>
                   </button>
@@ -5872,14 +6796,7 @@ function makeTextSprite(text, color = "#315b86") {
                 <button
                   key={`prediction-${prediction.id}`}
                   type="button"
-                  onClick={() => {
-                    setSelectedPredictionId(prediction.id);
-                    setCorrectedPredictionLabel(prediction.final_label_key || prediction.label_key || "");
-                    if (prediction.cad_handle) {
-                      const entity = cadEntitiesRef.current.find((row) => row.handle === prediction.cad_handle);
-                      if (entity) { selectEntityCandidate(candidateFromHandle(entity.handle, "prediction", 0)); zoomToEntity(entity); }
-                    }
-                  }}
+                  onClick={() => selectPredictionForReview(prediction)}
                   style={{ textAlign: "left", border: Number(selectedPredictionId) === Number(prediction.id) ? "1px solid #0b3d91" : "1px solid #dde4ec", borderRadius: 7, padding: 7, background: Number(selectedPredictionId) === Number(prediction.id) ? "#eaf2ff" : "#fff" }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
@@ -5894,6 +6811,7 @@ function makeTextSprite(text, color = "#315b86") {
             {selectedPrediction ? (
               <div style={{ borderTop: "1px dashed #cad5e1", marginTop: 9, paddingTop: 9 }}>
                 <div style={{ fontWeight: 700 }}>{resolveTagLabel(selectedPrediction.label_key, tagOptions)}</div>
+                {selectedPrediction.metadata?.instance_key ? <div style={{ color: "#0f6b5f", fontWeight: 800 }}>{selectedPrediction.metadata.instance_key}</div> : null}
                 <div className="muted">Handle: {selectedPrediction.cad_handle || "—"} · Layer: {selectedPrediction.cad_layer || "—"}</div>
                 <div className="muted">Geometry: {selectedPrediction.geometry_type || "—"} · Model: {selectedPrediction.model_version || "—"}</div>
                 <div className="muted">Confidence: {selectedPrediction.confidence == null ? "—" : Number(selectedPrediction.confidence).toFixed(3)}</div>
